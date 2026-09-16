@@ -1,0 +1,24 @@
+{
+  "samples": [
+    {
+      "id": "sample-1-hinglish-podcast",
+      "title": "Creator Economy & Monetization (Hinglish Conversation)",
+      "description": "2-minute segment with code-switching between Hindi grammar and English creator terminology",
+      "audioPath": "scripts/benchmark/samples/sample-1.wav",
+      "language": "hinglish",
+      "speakers": ["Speaker 1 (Host)", "Speaker 2 (Creator)"],
+      "groundTruthDevanagari": "अगर आप content create कर रहे हो तो consistency सबसे important चीज़ है। But problem ये है कि creators burnout हो जाते हैं within six months.",
+      "groundTruthRomanized": "Agar aap content create kar rahe ho toh consistency sabse important cheez hai. But problem yeh hai ki creators burnout ho jaate hain within six months."
+    },
+    {
+      "id": "sample-2-tech-interview",
+      "title": "Startup Journey & Product Strategy (Fast-paced Hinglish)",
+      "description": "High-density technical terms mixed with rapid conversational Hindi syntax",
+      "audioPath": "scripts/benchmark/samples/sample-2.wav",
+      "language": "hinglish",
+      "speakers": ["Speaker 1", "Speaker 2"],
+      "groundTruthDevanagari": "जब हमने v1 launch किया था, retention metrics बिल्कुल zero थे। We had to talk to every single customer manually.",
+      "groundTruthRomanized": "Jab humne v1 launch kiya tha, retention metrics bilkul zero the. We had to talk to every single customer manually."
+    }
+  ]
+}

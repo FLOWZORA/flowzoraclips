@@ -1,0 +1,76 @@
+export type SourceLanguage = 'hindi' | 'hinglish' | 'english' | 'auto';
+export type ScriptPreference = 'devanagari' | 'romanized';
+export type AspectRatio = '9:16' | '1:1' | '16:9';
+
+export type JobStage =
+  | 'queued'
+  | 'transcribing'
+  | 'detecting_fillers'
+  | 'generating_candidates'
+  | 'scoring'
+  | 'reframing'
+  | 'captioning'
+  | 'completed'
+  | 'failed';
+
+export interface WordTimestamp {
+  word: string;
+  start: number; // in seconds
+  end: number;   // in seconds
+  speaker?: string;
+  isFiller?: boolean;
+}
+
+export interface TranscriptSegment {
+  id: string;
+  text: string;
+  start: number;
+  end: number;
+  speaker?: string;
+  words: WordTimestamp[];
+}
+
+export interface ScoreDimensions {
+  hookStrength: number;        // 0 to 10
+  standaloneCoherence: number; // 0 to 10
+  emotionalPayoff: number;     // 0 to 10
+  topicTrendAlignment: number; // 0 to 10
+}
+
+export interface CandidateScore {
+  dimensions: ScoreDimensions;
+  compositeScore: number;      // Calculated weighted score (0-100)
+  reasoning: string;           // Transparent 1-line explanation of why this clip works
+}
+
+export interface CandidateClip {
+  id: string;
+  videoId: string;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  transcriptSnippet: string;
+  score: CandidateScore;
+  rank: number;
+  aspectRatio: AspectRatio;
+  reframeFallbackUsed: boolean;
+  outputUrl?: string;
+  thumbnailUrl?: string;
+  words?: WordTimestamp[];
+}
+
+export interface VideoJob {
+  id: string;
+  userId: string;
+  title: string;
+  sourceType: 'upload' | 'youtube';
+  sourceUrl: string;
+  language: SourceLanguage;
+  scriptPreference: ScriptPreference;
+  durationSeconds: number;
+  status: JobStage;
+  costAccruedUsd: number;
+  createdAt: string;
+  updatedAt: string;
+  clips?: CandidateClip[];
+}

@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-bg-base: #0a0b10;
+    --color-bg-surface: #141620;
+    --color-bg-surface-elevated: #1e2230;
+    --color-brand-primary: #ff5722;
+    --color-brand-primary-hover: #f44336;
+    --color-brand-accent: #ffb800;
+    --color-border-subtle: #242938;
+    --color-border-strong: #3b4257;
+    --color-text-primary: #ffffff;
+    --color-text-secondary: #9aa2b6;
+    --color-text-muted: #626b82;
+  }
+
+  body {
+    background-color: var(--color-bg-base);
+    color: var(--color-text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Support clean Devanagari ligature rendering */
+  .lang-hi, [lang="hi"] {
+    font-family: var(--font-devanagari), var(--font-body), sans-serif;
+    line-height: 1.6;
+  }
+}

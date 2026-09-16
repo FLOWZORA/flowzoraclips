@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-bg-base: #0a0b10;
+    --color-bg-surface: #141620;
+    --color-bg-surface-elevated: #1e2230;
+    --color-bg-subtle: #12141c;
+    
+    --color-brand-primary: #ff5722;
+    --color-brand-primary-hover: #f44336;
+    --color-brand-accent: #ffb800;
+    --color-brand-glow: rgba(255, 87, 34, 0.25);
+    
+    --color-border-subtle: #242938;
+    --color-border-strong: #3b4257;
+    
+    --color-text-primary: #ffffff;
+    --color-text-secondary: #9aa2b6;
+    --color-text-muted: #626b82;
+
+    --color-score-high: #10b981;
+    --color-score-mid: #f59e0b;
+    --color-score-low: #ef4444;
+
+    --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-devanagari: 'Noto Sans Devanagari', 'Mangal', sans-serif;
+  }
+
+  body {
+    background-color: var(--color-bg-base);
+    color: var(--color-text-primary);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Support clean Devanagari ligature rendering */
+  .lang-hi, [lang="hi"] {
+    font-family: var(--font-devanagari), var(--font-body);
+    line-height: 1.6;
+  }
+}
+
+/* Focused, purposeful micro-animations */
+@keyframes timelinePulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@keyframes collapseClip {
+  0% { transform: scaleY(1); opacity: 0.8; }
+  100% { transform: scaleY(0.95); opacity: 1; }
+}
+
+.animate-pulse-subtle {
+  animation: timelinePulse 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.clip-badge-score {
+  font-feature-settings: "tnum";
+  font-variant-numeric: tabular-nums;
+}
