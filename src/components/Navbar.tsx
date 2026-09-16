@@ -74,15 +74,15 @@ export default function Navbar() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
           {/* Brand Logo */}
           <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[#FF5722] text-white font-bold text-sm shadow-sm transition-transform group-hover:scale-105">
-              F
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-black border border-[#262626] transition-transform group-hover:scale-105 shadow-sm overflow-hidden p-1">
+              <svg viewBox="0 0 512 512" fill="none" className="h-full w-full">
+                <path d="M 116 148 L 246 256 L 116 364 Z" stroke="#FFFFFF" strokeWidth="48" strokeLinejoin="round" strokeLinecap="round" fill="none" />
+                <path d="M 276 148 L 406 256 L 276 364 Z" stroke="#FFFFFF" strokeWidth="48" strokeLinejoin="round" strokeLinecap="round" fill="none" />
+              </svg>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="font-semibold text-base tracking-tight text-white">
-                FLOWZORA
-              </span>
-              <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-[#FFB800] bg-[#FFB800]/10 border border-[#FFB800]/20 px-1.5 py-0.5 rounded-[4px]">
-                Clips
+            <div className="flex items-center">
+              <span className="font-semibold text-base tracking-tight text-white font-sans">
+                flowzora<span className="text-[#A1A1A1] font-normal">clips</span>
               </span>
             </div>
           </Link>
