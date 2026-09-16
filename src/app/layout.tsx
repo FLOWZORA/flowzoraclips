@@ -26,6 +26,14 @@ export const metadata: Metadata = {
   title: 'FLOWZORA Clips — AI Highlight Clipping for Hindi, Hinglish & English Creators',
   description:
     'Turn long podcasts and talk shows into ranked, ready-to-post 9:16 vertical clips. Genuine Hindi/Hinglish transcription accuracy with multi-dimensional transparent scoring.',
+  icons: {
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico' },
+    ],
+    apple: '/favicon.svg',
+  },
   openGraph: {
     title: 'FLOWZORA Clips — AI Highlight Clipping for Hindi & Hinglish Creators',
     description:
