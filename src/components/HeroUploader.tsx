@@ -216,11 +216,16 @@ export default function HeroUploader() {
               setUploadProgress(100);
               resolve();
             } else {
-              reject(new Error(`Direct storage upload failed with status ${xhr.status}`));
+              reject(new Error(`Storage upload failed with status ${xhr.status}. Check R2 bucket permissions.`));
             }
           };
 
-          xhr.onerror = () => reject(new Error('Network error during storage upload.'));
+          xhr.onerror = () =>
+            reject(
+              new Error(
+                'Direct upload blocked by Cloudflare R2 CORS. Please add the CORS policy to your R2 bucket "flowzoraclips" in Cloudflare Dashboard, or use the YouTube URL tab for instant server-side processing.'
+              )
+            );
           xhr.send(selectedFile);
         });
       }
