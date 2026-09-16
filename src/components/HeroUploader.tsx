@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Upload,
   Link2,
@@ -14,6 +14,8 @@ import {
   Play,
   Share2,
   Download,
+  ChevronDown,
+  X,
 } from 'lucide-react';
 import { CandidateClip } from '@/lib/pipeline/types';
 import ClipVideoPreview from '@/components/ClipVideoPreview';
@@ -34,6 +36,8 @@ export default function HeroUploader() {
   const [language, setLanguage] = useState<'hinglish' | 'hindi' | 'english' | 'auto'>('hinglish');
   const [scriptPreference, setScriptPreference] = useState<'romanized' | 'devanagari'>('romanized');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [youtubeMetadata, setYoutubeMetadata] = useState<{
     videoId: string;
@@ -316,8 +320,9 @@ export default function HeroUploader() {
           {/* Input Method Switcher */}
           <div className="flex items-center gap-1 rounded-lg bg-[#111111] p-1 border border-[#262626]">
             <button
+              type="button"
               onClick={() => setActiveTab('upload')}
-              className={`flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs font-medium transition-all ${
+              className={`flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs font-medium transition-all cursor-pointer ${
                 activeTab === 'upload'
                   ? 'bg-[#222222] text-white shadow-sm border border-[#333333]'
                   : 'text-[#A1A1A1] hover:text-white'
@@ -327,8 +332,9 @@ export default function HeroUploader() {
               Upload Audio / Video
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('url')}
-              className={`flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs font-medium transition-all ${
+              className={`flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs font-medium transition-all cursor-pointer ${
                 activeTab === 'url'
                   ? 'bg-[#222222] text-white shadow-sm border border-[#333333]'
                   : 'text-[#A1A1A1] hover:text-white'
@@ -339,32 +345,38 @@ export default function HeroUploader() {
             </button>
           </div>
 
-          {/* Language & Script Selector */}
+          {/* Language & Script Selector Dropdowns */}
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
               <label className="text-xs font-mono text-[#A1A1A1]">AUDIO:</label>
-              <select
-                value={language}
-                onChange={(e) => setLanguage(e.target.value as any)}
-                className="rounded-md border border-[#262626] bg-[#111111] px-2.5 py-1.5 text-xs text-[#EDEDED] focus:outline-none focus:border-[#555555] transition-colors"
-              >
-                <option value="hinglish">Hinglish (Hindi + English)</option>
-                <option value="hindi">Hindi (हिन्दी)</option>
-                <option value="english">English</option>
-                <option value="auto">Auto-detect</option>
-              </select>
+              <div className="relative">
+                <select
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value as any)}
+                  className="appearance-none rounded-md border border-[#262626] bg-[#111111] pl-2.5 pr-8 py-1.5 text-xs text-[#EDEDED] focus:outline-none focus:border-[#555555] transition-colors cursor-pointer"
+                >
+                  <option value="hinglish" className="bg-[#111111] text-[#EDEDED]">Hinglish (Hindi + English)</option>
+                  <option value="hindi" className="bg-[#111111] text-[#EDEDED]">Hindi (हिन्दी)</option>
+                  <option value="english" className="bg-[#111111] text-[#EDEDED]">English</option>
+                  <option value="auto" className="bg-[#111111] text-[#EDEDED]">Auto-detect</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#A1A1A1]" />
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
               <label className="text-xs font-mono text-[#A1A1A1]">CAPTIONS:</label>
-              <select
-                value={scriptPreference}
-                onChange={(e) => setScriptPreference(e.target.value as any)}
-                className="rounded-md border border-[#262626] bg-[#111111] px-2.5 py-1.5 text-xs text-[#EDEDED] focus:outline-none focus:border-[#555555] transition-colors"
-              >
-                <option value="romanized">Romanized (Latin Script)</option>
-                <option value="devanagari">Devanagari (देवनागरी)</option>
-              </select>
+              <div className="relative">
+                <select
+                  value={scriptPreference}
+                  onChange={(e) => setScriptPreference(e.target.value as any)}
+                  className="appearance-none rounded-md border border-[#262626] bg-[#111111] pl-2.5 pr-8 py-1.5 text-xs text-[#EDEDED] focus:outline-none focus:border-[#555555] transition-colors cursor-pointer"
+                >
+                  <option value="romanized" className="bg-[#111111] text-[#EDEDED]">Romanized (Latin Script)</option>
+                  <option value="devanagari" className="bg-[#111111] text-[#EDEDED]">Devanagari (देवनागरी)</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#A1A1A1]" />
+              </div>
             </div>
           </div>
         </div>
@@ -372,19 +384,41 @@ export default function HeroUploader() {
         {/* Input Body */}
         <div className="mt-6">
           {activeTab === 'upload' ? (
-            <div className="relative rounded-xl border border-dashed border-[#262626] bg-[#050505] p-8 text-center hover:border-[#404040] hover:bg-[#080808] transition-all cursor-pointer group">
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                if (e.dataTransfer.files?.[0]) {
+                  setSelectedFile(e.dataTransfer.files[0]);
+                }
+              }}
+              onClick={() => fileInputRef.current?.click()}
+              className={`relative rounded-xl border border-dashed transition-all p-8 text-center cursor-pointer group ${
+                isDragging
+                  ? 'border-white bg-[#111111] scale-[1.01]'
+                  : selectedFile
+                  ? 'border-[#383838] bg-[#0A0A0A]'
+                  : 'border-[#262626] bg-[#050505] hover:border-[#404040] hover:bg-[#080808]'
+              }`}
+            >
               <input
+                ref={fileInputRef}
                 type="file"
                 accept="video/mp4,video/quicktime,audio/mpeg,audio/wav"
                 onChange={(e) => {
                   if (e.target.files?.[0]) setSelectedFile(e.target.files[0]);
                 }}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
               />
-              <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-[#111111] border border-[#262626] text-[#EDEDED] group-hover:scale-105 transition-transform">
+              <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-[#111111] border border-[#262626] text-[#EDEDED] group-hover:scale-105 transition-transform pointer-events-none">
                 <Upload className="h-5 w-5" />
               </div>
-              <p className="mt-3 text-sm font-medium text-white">
+              <p className="mt-3 text-sm font-medium text-white pointer-events-none">
                 {selectedFile ? (
                   <span>
                     {selectedFile.name}{' '}
@@ -393,16 +427,39 @@ export default function HeroUploader() {
                     </span>
                   </span>
                 ) : (
-                  'Drop long-form podcast or video here, or click to browse'
+                  <span>
+                    Drop long-form podcast or video here, or <span className="underline underline-offset-4 text-white">click to browse</span>
+                  </span>
                 )}
               </p>
-              <p className="mt-1 text-xs text-[#A1A1A1]">
+              <p className="mt-1 text-xs text-[#A1A1A1] pointer-events-none">
                 Direct Cloudflare R2 Presigned Uploads • Supports MP4, MOV, MP3, WAV
               </p>
 
+              {/* If file is selected, show change/remove controls */}
+              {selectedFile && (
+                <div className="mt-4 flex items-center justify-center gap-2 z-30 relative" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="rounded-md border border-[#262626] bg-[#141414] hover:bg-[#202020] px-3 py-1 text-xs font-medium text-[#EDEDED] transition-colors"
+                  >
+                    Change File
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFile(null)}
+                    className="rounded-md border border-[#262626] bg-[#141414] hover:bg-[#202020] p-1 text-[#A1A1A1] hover:text-white transition-colors"
+                    title="Remove file"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+
               {/* Real-time Upload Progress Bar */}
               {uploadProgress !== null && (
-                <div className="mt-4 w-full max-w-md mx-auto">
+                <div className="mt-4 w-full max-w-md mx-auto pointer-events-none">
                   <div className="flex justify-between text-xs text-[#A1A1A1] mb-1 font-mono">
                     <span>Streaming to Cloudflare R2…</span>
                     <span className="font-semibold text-white tabular-nums">{uploadProgress}%</span>
@@ -535,9 +592,10 @@ export default function HeroUploader() {
           )}
 
           <button
+            type="button"
             onClick={handleRunPipeline}
             disabled={isProcessing}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-full bg-white text-black hover:bg-[#E5E5E5] px-7 py-2.5 text-xs font-semibold shadow-sm transition-all focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:outline-none disabled:opacity-50"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-full bg-white text-black hover:bg-[#E5E5E5] px-7 py-2.5 text-xs font-semibold shadow-sm transition-all focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:outline-none disabled:opacity-50 cursor-pointer"
           >
             <Sparkles className="h-3.5 w-3.5 text-[#FFB800]" />
             {isProcessing ? 'Processing Pipeline…' : 'Generate Ranked Highlights'}
@@ -560,8 +618,9 @@ export default function HeroUploader() {
 
               <div className="flex items-center rounded-lg bg-[#111111] p-1 border border-[#262626]">
                 <button
+                  type="button"
                   onClick={() => setViewMode('flowzora')}
-                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all cursor-pointer ${
                     viewMode === 'flowzora'
                       ? 'bg-[#222222] text-white shadow-sm border border-[#333333]'
                       : 'text-[#A1A1A1] hover:text-white'
@@ -571,8 +630,9 @@ export default function HeroUploader() {
                   FLOWZORA (Semantic + Gemini)
                 </button>
                 <button
+                  type="button"
                   onClick={() => setViewMode('naive')}
-                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all cursor-pointer ${
                     viewMode === 'naive'
                       ? 'bg-[#222222] text-white shadow-sm border border-[#333333]'
                       : 'text-[#A1A1A1] hover:text-white'
@@ -705,30 +765,34 @@ export default function HeroUploader() {
                           <span className="font-mono text-[11px] text-[#707070]">NUDGE:</span>
                           <div className="flex items-center gap-1.5 font-mono text-xs">
                             <button
+                              type="button"
                               onClick={() => handleNudge(clip.id, 'start', -1)}
-                              className="rounded-md bg-[#111111] border border-[#262626] px-2 py-0.5 hover:bg-[#222222] text-[#EDEDED] transition-colors"
+                              className="rounded-md bg-[#111111] border border-[#262626] px-2 py-0.5 hover:bg-[#222222] text-[#EDEDED] transition-colors cursor-pointer"
                               title="Start -1s"
                             >
                               -1s
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleNudge(clip.id, 'start', 1)}
-                              className="rounded-md bg-[#111111] border border-[#262626] px-2 py-0.5 hover:bg-[#222222] text-[#EDEDED] transition-colors"
+                              className="rounded-md bg-[#111111] border border-[#262626] px-2 py-0.5 hover:bg-[#222222] text-[#EDEDED] transition-colors cursor-pointer"
                               title="Start +1s"
                             >
                               +1s
                             </button>
                             <span className="text-[#383838]">|</span>
                             <button
+                              type="button"
                               onClick={() => handleNudge(clip.id, 'end', -1)}
-                              className="rounded-md bg-[#111111] border border-[#262626] px-2 py-0.5 hover:bg-[#222222] text-[#EDEDED] transition-colors"
+                              className="rounded-md bg-[#111111] border border-[#262626] px-2 py-0.5 hover:bg-[#222222] text-[#EDEDED] transition-colors cursor-pointer"
                               title="End -1s"
                             >
                               End -1s
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleNudge(clip.id, 'end', 1)}
-                              className="rounded-md bg-[#111111] border border-[#262626] px-2 py-0.5 hover:bg-[#222222] text-[#EDEDED] transition-colors"
+                              className="rounded-md bg-[#111111] border border-[#262626] px-2 py-0.5 hover:bg-[#222222] text-[#EDEDED] transition-colors cursor-pointer"
                               title="End +1s"
                             >
                               End +1s
@@ -738,15 +802,17 @@ export default function HeroUploader() {
 
                         <div className="flex items-center gap-2">
                           <button
+                            type="button"
                             onClick={() => setPreviewClip(clip)}
-                            className="flex-1 flex items-center justify-center gap-1.5 rounded-md bg-white py-2 text-xs font-semibold text-black hover:bg-[#E5E5E5] transition-colors shadow-sm"
+                            className="flex-1 flex items-center justify-center gap-1.5 rounded-md bg-white py-2 text-xs font-semibold text-black hover:bg-[#E5E5E5] transition-colors shadow-sm cursor-pointer"
                           >
                             <Play className="h-3 w-3 fill-black" />
                             Preview 9:16
                           </button>
                           <button
+                            type="button"
                             onClick={() => setSocialCopyClip(clip)}
-                            className="flex items-center justify-center gap-1 rounded-md border border-[#262626] bg-[#111111] px-2.5 py-2 text-xs font-medium text-[#EDEDED] hover:border-[#383838] transition-colors"
+                            className="flex items-center justify-center gap-1 rounded-md border border-[#262626] bg-[#111111] px-2.5 py-2 text-xs font-medium text-[#EDEDED] hover:border-[#383838] transition-colors cursor-pointer"
                             title="Generate Social Copy"
                           >
                             <Sparkles className="h-3.5 w-3.5 text-[#FFB800]" />
