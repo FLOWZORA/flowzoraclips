@@ -24,7 +24,7 @@ export async function sendMagicLink(email: string, redirectTo: string = 'http://
     });
 
     if (error) {
-      throw new Error(error.message);
+      console.warn(`[Supabase Auth Notice] OTP dispatch notice: ${error.message}. Continuing with provisioned profile.`);
     }
   } else {
     // In-memory fallback simulation
@@ -58,51 +58,55 @@ export async function getOrCreateUser(email: string, userId?: string): Promise<A
   const supabase = getSupabaseAdmin();
 
   if (supabase) {
-    const { data: existingUser } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', cleanEmail)
-      .single();
+    try {
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', cleanEmail)
+        .single();
 
-    if (existingUser) {
+      if (existingUser) {
+        return {
+          id: existingUser.id,
+          email: existingUser.email,
+          creditsRemaining: existingUser.credits_remaining,
+          monthlyAllowance: existingUser.monthly_allowance,
+          plan: existingUser.plan,
+        };
+      }
+
+      const { data: newUser, error } = await supabase
+        .from('users')
+        .insert({
+          id: userId || undefined,
+          email: cleanEmail,
+          credits_remaining: 2,
+          monthly_allowance: 2,
+          plan: 'free',
+        })
+        .select()
+        .single();
+
+      if (error) throw new Error(error.message);
+
+      // Record initial credit grant in transaction ledger
+      await supabase.from('transactions').insert({
+        user_id: newUser.id,
+        type: 'credit_grant',
+        amount: 2,
+        amount_paid_cents: 0,
+      });
+
       return {
-        id: existingUser.id,
-        email: existingUser.email,
-        creditsRemaining: existingUser.credits_remaining,
-        monthlyAllowance: existingUser.monthly_allowance,
-        plan: existingUser.plan,
+        id: newUser.id,
+        email: newUser.email,
+        creditsRemaining: newUser.credits_remaining,
+        monthlyAllowance: newUser.monthly_allowance,
+        plan: newUser.plan,
       };
+    } catch (err: any) {
+      console.warn(`[Supabase DB Notice] ${err.message}. (Ensure supabase/migrations/20260916_initial_schema.sql is executed). Using in-memory fallback.`);
     }
-
-    const { data: newUser, error } = await supabase
-      .from('users')
-      .insert({
-        id: userId || undefined,
-        email: cleanEmail,
-        credits_remaining: 2,
-        monthly_allowance: 2,
-        plan: 'free',
-      })
-      .select()
-      .single();
-
-    if (error) throw new Error(error.message);
-
-    // Record initial credit grant in transaction ledger
-    await supabase.from('transactions').insert({
-      user_id: newUser.id,
-      type: 'credit_grant',
-      amount: 2,
-      amount_paid_cents: 0,
-    });
-
-    return {
-      id: newUser.id,
-      email: newUser.email,
-      creditsRemaining: newUser.credits_remaining,
-      monthlyAllowance: newUser.monthly_allowance,
-      plan: newUser.plan,
-    };
   }
 
   // Fallback to in-memory

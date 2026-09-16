@@ -193,31 +193,66 @@ async function verifyCredentials() {
     }
   }
 
-  // 4. Stripe Billing
-  const stripeKey = env.STRIPE_SECRET_KEY;
-  if (!stripeKey || stripeKey.includes('YourStripeSecretKey')) {
+  // 4. Payments: Razorpay (Recommended for India / UPI) or Stripe
+  const rzpKeyId = env.RAZORPAY_KEY_ID;
+  const rzpKeySecret = env.RAZORPAY_KEY_SECRET;
+
+  if (!rzpKeyId || !rzpKeySecret || rzpKeyId.includes('YourRazorpayKey')) {
     results.push({
-      service: 'Stripe Payments',
-      variable: 'STRIPE_SECRET_KEY',
+      service: 'Razorpay (India / UPI / Cards 🏆)',
+      variable: 'RAZORPAY_KEY_ID',
       status: 'FALLBACK_SIMULATION',
-      detail: 'Key not set. Using instant simulated checkout sessions ($12 / $49).',
-      action: 'Get keys from Stripe Dashboard > Developers > API keys',
+      detail: 'Key not set. Instant test mode available without invite.',
+      action: 'Get test keys at https://dashboard.razorpay.com/ > Settings > API Keys',
     });
   } else {
+    try {
+      const authHeader = 'Basic ' + Buffer.from(`${rzpKeyId}:${rzpKeySecret}`).toString('base64');
+      const res = await fetch('https://api.razorpay.com/v1/orders?count=1', {
+        headers: { Authorization: authHeader },
+      });
+      if (res.ok) {
+        results.push({
+          service: 'Razorpay (India / UPI / Cards 🏆)',
+          variable: 'RAZORPAY_KEY_ID',
+          status: 'LIVE_CONNECTED',
+          detail: 'Valid Razorpay Key! Live UPI (GPay/PhonePe) & card checkout enabled.',
+        });
+      } else {
+        results.push({
+          service: 'Razorpay (India / UPI / Cards 🏆)',
+          variable: 'RAZORPAY_KEY_ID',
+          status: 'ERROR',
+          detail: `Razorpay rejected credentials with HTTP ${res.status}`,
+        });
+      }
+    } catch (err) {
+      results.push({
+        service: 'Razorpay (India / UPI / Cards 🏆)',
+        variable: 'RAZORPAY_KEY_ID',
+        status: 'NETWORK_ERROR',
+        detail: `Connection failed: ${err.message}`,
+      });
+    }
+  }
+
+  // 4b. Stripe Billing (Global / Invite-only in India)
+  const stripeKey = env.STRIPE_SECRET_KEY;
+  if (stripeKey && !stripeKey.includes('YourStripeSecretKey')) {
     try {
       const res = await fetch('https://api.stripe.com/v1/balance', {
         headers: { Authorization: `Bearer ${stripeKey}` },
       });
       if (res.ok) {
         results.push({
-          service: 'Stripe Payments',
+          service: 'Stripe Payments (Global)',
           variable: 'STRIPE_SECRET_KEY',
           status: 'LIVE_CONNECTED',
           detail: 'Valid Stripe Secret Key. Live credit pack checkouts active.',
         });
       } else {
         results.push({
-          service: 'Stripe Payments',
+          service: 'Stripe Payments (Global)',
           variable: 'STRIPE_SECRET_KEY',
           status: 'ERROR',
           detail: `Stripe returned HTTP ${res.status}`,
@@ -225,7 +260,7 @@ async function verifyCredentials() {
       }
     } catch (err) {
       results.push({
-        service: 'Stripe Payments',
+        service: 'Stripe Payments (Global)',
         variable: 'STRIPE_SECRET_KEY',
         status: 'NETWORK_ERROR',
         detail: `Connection failed: ${err.message}`,

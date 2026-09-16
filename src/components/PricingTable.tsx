@@ -83,14 +83,17 @@ export default function PricingTable() {
               <div className="text-xs font-bold uppercase tracking-wider text-[#FF5722]">
                 Creator Top-Up
               </div>
-              <div className="mt-3 flex items-baseline gap-1">
+              <div className="mt-3 flex items-baseline gap-2 flex-wrap">
                 <span className="text-3xl sm:text-4xl font-black text-white font-[var(--font-outfit)]">
                   $12
+                </span>
+                <span className="text-xl sm:text-2xl font-bold text-[#FF5722] font-[var(--font-outfit)]">
+                  / ₹999
                 </span>
                 <span className="text-xs text-[#9AA2B6]">one-time pack</span>
               </div>
               <p className="mt-2 text-xs text-[#9AA2B6]">
-                Pay once, use anytime. No recurring monthly credit card lock-in.
+                Pay once via UPI (GPay/PhonePe) or Cards. No recurring subscription lock-in.
               </p>
 
               <div className="my-6 border-t border-[#242938]"></div>
@@ -99,7 +102,7 @@ export default function PricingTable() {
                 <li className="flex items-center gap-2">
                   <span className="text-[#FF5722] font-bold">✓</span>
                   <span>
-                    <strong>10 additional video credits</strong>
+                    <strong>10 additional video credits</strong> (₹99/video)
                   </span>
                 </li>
                 <li className="flex items-center gap-2">
@@ -126,7 +129,7 @@ export default function PricingTable() {
             <div className="mt-8">
               <CheckoutButton
                 packId="creator_10"
-                label="Buy 10 Credits ($1.20/video)"
+                label="Buy 10 Credits (UPI / Card)"
                 className="block w-full text-center rounded-lg bg-[#FF5722] py-2.5 text-xs font-bold text-white hover:bg-[#F44336] transition-colors shadow-md"
               />
             </div>
@@ -138,14 +141,17 @@ export default function PricingTable() {
               <div className="text-xs font-bold uppercase tracking-wider text-[#FFB800]">
                 Pro Pack / Agency
               </div>
-              <div className="mt-3 flex items-baseline gap-1">
+              <div className="mt-3 flex items-baseline gap-2 flex-wrap">
                 <span className="text-3xl sm:text-4xl font-black text-white font-[var(--font-outfit)]">
                   $49
+                </span>
+                <span className="text-xl sm:text-2xl font-bold text-[#FFB800] font-[var(--font-outfit)]">
+                  / ₹3,999
                 </span>
                 <span className="text-xs text-[#9AA2B6]">one-time pack</span>
               </div>
               <p className="mt-2 text-xs text-[#9AA2B6]">
-                For production teams and active podcast studios.
+                For production teams and active podcast studios. Instant UPI or Cards.
               </p>
 
               <div className="my-6 border-t border-[#242938]"></div>

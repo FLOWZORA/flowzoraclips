@@ -49,7 +49,7 @@ ${candidate.text}
 Evaluate this candidate and respond with structured JSON.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
         contents: prompt,
         config: {
           systemInstruction: SCORING_SYSTEM_INSTRUCTION,

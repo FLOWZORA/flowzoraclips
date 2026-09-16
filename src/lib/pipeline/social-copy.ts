@@ -89,7 +89,7 @@ ${scriptDirective}
 Return a clean, high-impact JSON object matching the requested schema.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
