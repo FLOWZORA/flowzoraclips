@@ -35,6 +35,7 @@
     "esbuild": true
   },
   "devDependencies": {
+    "next-devtools-mcp": "^0.4.0",
     "tsx": "^4.23.13",
     "typescript": "7.0.2"
   }
