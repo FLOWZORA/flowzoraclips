@@ -23,11 +23,14 @@ export default function PricingPage() {
       <Navbar />
 
       <main className="flex-1">
-        <div className="pt-8 pb-4 text-center px-4">
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-white font-[var(--font-outfit)]">
-            FLOWZORA Clips Plans & Pricing
+        <div className="pt-12 pb-4 text-center px-4">
+          <div className="font-mono text-xs uppercase tracking-wider text-[#A1A1A1] mb-2">
+            Pricing &amp; Packaging
+          </div>
+          <h1 className="text-3xl sm:text-5xl font-semibold text-white tracking-[-0.04em] text-balance">
+            FLOWZORA Clips Plans &amp; Pricing
           </h1>
-          <p className="mt-2 text-sm text-[#9AA2B6]">
+          <p className="mt-3 text-sm sm:text-base text-[#A1A1A1] max-w-xl mx-auto text-balance">
             Permanent free monthly allotment. Pay-as-you-go top-ups. Zero forced subscriptions.
           </p>
         </div>

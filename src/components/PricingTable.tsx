@@ -4,60 +4,63 @@ import CheckoutButton from './CheckoutButton';
 
 export default function PricingTable() {
   return (
-    <section id="pricing" className="border-t border-[#242938] bg-[#0A0B10] py-16 sm:py-20">
+    <section id="pricing" className="border-t border-[#262626] bg-[#000000] py-16 sm:py-24">
       <div className="mx-auto max-w-5xl px-4 sm:px-6">
         <div className="text-center max-w-2xl mx-auto">
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight font-[var(--font-outfit)]">
+          <div className="font-mono text-xs uppercase tracking-wider text-[#A1A1A1] mb-2">
+            Fair Pay-As-You-Go Economics
+          </div>
+          <h2 className="text-2xl sm:text-4xl font-semibold text-white tracking-[-0.03em] text-balance">
             Transparent Pricing Without Forced Subscriptions
           </h2>
-          <p className="mt-3 text-sm text-[#9AA2B6]">
+          <p className="mt-3 text-sm text-[#A1A1A1] text-balance">
             A permanent recurring free monthly allowance for solo creators, plus straightforward pay-per-video top-ups when you have more content to clip.
           </p>
         </div>
 
-        {/* Crawlable Plain-HTML Pricing Grid (Pure React Server Component with client checkout triggers) */}
+        {/* Crawlable Plain-HTML Pricing Grid (Rule B: Pure React Server Component with client checkout triggers) */}
         <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Free Tier Card */}
-          <div className="rounded-xl border border-[#2B3040] bg-[#141620] p-6 flex flex-col justify-between">
+          <div className="rounded-xl border border-[#262626] bg-[#0A0A0A] p-6 flex flex-col justify-between hover:border-[#383838] transition-colors">
             <div>
-              <div className="text-xs font-bold uppercase tracking-wider text-[#10B981]">
+              <div className="font-mono text-xs uppercase tracking-wider text-[#10B981]">
                 Monthly Free Tier
               </div>
-              <div className="mt-3 flex items-baseline gap-1">
-                <span className="text-3xl sm:text-4xl font-black text-white font-[var(--font-outfit)]">
+              <div className="mt-3 flex items-baseline gap-1 font-mono">
+                <span className="text-3xl sm:text-4xl font-semibold text-white tabular-nums">
                   $0
                 </span>
-                <span className="text-xs text-[#9AA2B6]">/ forever</span>
+                <span className="text-xs text-[#A1A1A1] font-sans">/ forever</span>
               </div>
-              <p className="mt-2 text-xs text-[#9AA2B6]">
+              <p className="mt-2 text-xs text-[#A1A1A1]">
                 Permanent recurring monthly allotment. Not an expiring trial.
               </p>
 
-              <div className="my-6 border-t border-[#242938]"></div>
+              <div className="my-6 border-t border-[#262626]"></div>
 
-              <ul className="space-y-3 text-xs text-white">
+              <ul className="space-y-3 text-xs text-[#EDEDED]">
                 <li className="flex items-center gap-2">
-                  <span className="text-[#10B981] font-bold">✓</span>
+                  <span className="text-[#10B981] font-mono font-bold">✓</span>
                   <span>
-                    <strong>2 full videos</strong> per month
+                    <strong className="text-white">2 full videos</strong> per month
                   </span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#10B981] font-bold">✓</span>
+                  <span className="text-[#10B981] font-mono font-bold">✓</span>
                   <span>
-                    Up to <strong>10 minutes</strong> per source video
+                    Up to <strong className="text-white">10 minutes</strong> per source video
                   </span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#10B981] font-bold">✓</span>
+                  <span className="text-[#10B981] font-mono font-bold">✓</span>
                   <span>Full Gemini structured scoring</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#10B981] font-bold">✓</span>
+                  <span className="text-[#10B981] font-mono font-bold">✓</span>
                   <span>9:16 export with burned-in captions</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#10B981] font-bold">✓</span>
+                  <span className="text-[#10B981] font-mono font-bold">✓</span>
                   <span>Magic link email authentication</span>
                 </li>
               </ul>
@@ -66,7 +69,7 @@ export default function PricingTable() {
             <div className="mt-8">
               <a
                 href="#app"
-                className="block w-full text-center rounded-lg border border-[#2B3040] bg-[#1E2230] py-2.5 text-xs font-bold text-white hover:border-[#FF5722] hover:text-[#FF5722] transition-colors"
+                className="block w-full text-center rounded-full border border-[#262626] bg-[#111111] hover:bg-[#1C1C1C] py-2 text-xs font-semibold text-white transition-colors"
               >
                 Start Free (2 Videos/Mo)
               </a>
@@ -74,53 +77,53 @@ export default function PricingTable() {
           </div>
 
           {/* Pay-Per-Video Top-Up (Popular) */}
-          <div className="relative rounded-xl border-2 border-[#FF5722] bg-[#141620] p-6 flex flex-col justify-between shadow-xl">
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-[#FF5722] px-3 py-0.5 text-[11px] font-extrabold uppercase tracking-wider text-white">
+          <div className="relative rounded-xl border border-white bg-[#0A0A0A] p-6 flex flex-col justify-between shadow-[0_0_50px_-15px_rgba(255,255,255,0.08)]">
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-white px-3 py-0.5 text-[10px] font-mono font-semibold uppercase tracking-wider text-black">
               Most Popular
             </div>
 
             <div>
-              <div className="text-xs font-bold uppercase tracking-wider text-[#FF5722]">
+              <div className="font-mono text-xs uppercase tracking-wider text-[#FF5722]">
                 Creator Top-Up
               </div>
-              <div className="mt-3 flex items-baseline gap-2 flex-wrap">
-                <span className="text-3xl sm:text-4xl font-black text-white font-[var(--font-outfit)]">
+              <div className="mt-3 flex items-baseline gap-2 flex-wrap font-mono">
+                <span className="text-3xl sm:text-4xl font-semibold text-white tabular-nums">
                   $12
                 </span>
-                <span className="text-xl sm:text-2xl font-bold text-[#FF5722] font-[var(--font-outfit)]">
+                <span className="text-xl sm:text-2xl font-medium text-[#FF5722] tabular-nums">
                   / ₹999
                 </span>
-                <span className="text-xs text-[#9AA2B6]">one-time pack</span>
+                <span className="text-xs text-[#A1A1A1] font-sans">one-time pack</span>
               </div>
-              <p className="mt-2 text-xs text-[#9AA2B6]">
+              <p className="mt-2 text-xs text-[#A1A1A1]">
                 Pay once via UPI (GPay/PhonePe) or Cards. No recurring subscription lock-in.
               </p>
 
-              <div className="my-6 border-t border-[#242938]"></div>
+              <div className="my-6 border-t border-[#262626]"></div>
 
-              <ul className="space-y-3 text-xs text-white">
+              <ul className="space-y-3 text-xs text-[#EDEDED]">
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FF5722] font-bold">✓</span>
+                  <span className="text-[#FF5722] font-mono font-bold">✓</span>
                   <span>
-                    <strong>10 additional video credits</strong> (₹99/video)
+                    <strong className="text-white">10 additional video credits</strong> (₹99/video)
                   </span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FF5722] font-bold">✓</span>
+                  <span className="text-[#FF5722] font-mono font-bold">✓</span>
                   <span>
-                    Up to <strong>60 minutes</strong> per video
+                    Up to <strong className="text-white">60 minutes</strong> per video
                   </span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FF5722] font-bold">✓</span>
-                  <span>Priority transcription & rendering queue</span>
+                  <span className="text-[#FF5722] font-mono font-bold">✓</span>
+                  <span>Priority transcription &amp; rendering queue</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FF5722] font-bold">✓</span>
+                  <span className="text-[#FF5722] font-mono font-bold">✓</span>
                   <span>Multi-aspect exports (9:16, 1:1, 16:9)</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FF5722] font-bold">✓</span>
+                  <span className="text-[#FF5722] font-mono font-bold">✓</span>
                   <span>Word-level filler-word trimming</span>
                 </li>
               </ul>
@@ -130,55 +133,55 @@ export default function PricingTable() {
               <CheckoutButton
                 packId="creator_10"
                 label="Buy 10 Credits (UPI / Card)"
-                className="block w-full text-center rounded-lg bg-[#FF5722] py-2.5 text-xs font-bold text-white hover:bg-[#F44336] transition-colors shadow-md"
+                className="block w-full text-center rounded-full bg-white py-2 text-xs font-semibold text-black hover:bg-[#E5E5E5] transition-colors shadow-sm"
               />
             </div>
           </div>
 
           {/* Agency / High Volume */}
-          <div className="rounded-xl border border-[#2B3040] bg-[#141620] p-6 flex flex-col justify-between">
+          <div className="rounded-xl border border-[#262626] bg-[#0A0A0A] p-6 flex flex-col justify-between hover:border-[#383838] transition-colors">
             <div>
-              <div className="text-xs font-bold uppercase tracking-wider text-[#FFB800]">
+              <div className="font-mono text-xs uppercase tracking-wider text-[#FFB800]">
                 Pro Pack / Agency
               </div>
-              <div className="mt-3 flex items-baseline gap-2 flex-wrap">
-                <span className="text-3xl sm:text-4xl font-black text-white font-[var(--font-outfit)]">
+              <div className="mt-3 flex items-baseline gap-2 flex-wrap font-mono">
+                <span className="text-3xl sm:text-4xl font-semibold text-white tabular-nums">
                   $49
                 </span>
-                <span className="text-xl sm:text-2xl font-bold text-[#FFB800] font-[var(--font-outfit)]">
+                <span className="text-xl sm:text-2xl font-medium text-[#FFB800] tabular-nums">
                   / ₹3,999
                 </span>
-                <span className="text-xs text-[#9AA2B6]">one-time pack</span>
+                <span className="text-xs text-[#A1A1A1] font-sans">one-time pack</span>
               </div>
-              <p className="mt-2 text-xs text-[#9AA2B6]">
+              <p className="mt-2 text-xs text-[#A1A1A1]">
                 For production teams and active podcast studios. Instant UPI or Cards.
               </p>
 
-              <div className="my-6 border-t border-[#242938]"></div>
+              <div className="my-6 border-t border-[#262626]"></div>
 
-              <ul className="space-y-3 text-xs text-white">
+              <ul className="space-y-3 text-xs text-[#EDEDED]">
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FFB800] font-bold">✓</span>
+                  <span className="text-[#FFB800] font-mono font-bold">✓</span>
                   <span>
-                    <strong>50 video credits</strong> ($0.98/video)
+                    <strong className="text-white">50 video credits</strong> ($0.98/video)
                   </span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FFB800] font-bold">✓</span>
+                  <span className="text-[#FFB800] font-mono font-bold">✓</span>
                   <span>
-                    Up to <strong>120 minutes</strong> per episode
+                    Up to <strong className="text-white">120 minutes</strong> per episode
                   </span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FFB800] font-bold">✓</span>
+                  <span className="text-[#FFB800] font-mono font-bold">✓</span>
                   <span>Bulk batch export</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FFB800] font-bold">✓</span>
+                  <span className="text-[#FFB800] font-mono font-bold">✓</span>
                   <span>Dedicated worker rendering priority</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FFB800] font-bold">✓</span>
+                  <span className="text-[#FFB800] font-mono font-bold">✓</span>
                   <span>Phase 2 API early access</span>
                 </li>
               </ul>
@@ -188,45 +191,45 @@ export default function PricingTable() {
               <CheckoutButton
                 packId="pro_50"
                 label="Buy 50 Credits Pack"
-                className="block w-full text-center rounded-lg border border-[#2B3040] bg-[#1E2230] py-2.5 text-xs font-bold text-white hover:border-[#FFB800] hover:text-[#FFB800] transition-colors"
+                className="block w-full text-center rounded-full border border-[#262626] bg-[#111111] hover:bg-[#1C1C1C] py-2 text-xs font-semibold text-white transition-colors"
               />
             </div>
           </div>
         </div>
 
-        {/* Plain HTML Table for Direct Crawler Certainty */}
+        {/* Plain HTML Table for Direct Crawler Certainty (Rule B) */}
         <div className="mt-12 overflow-x-auto">
-          <table className="w-full text-left text-xs border border-[#242938] rounded-lg">
-            <thead className="bg-[#141620] text-[#9AA2B6] border-b border-[#242938]">
+          <table className="w-full text-left text-xs border border-[#262626] rounded-lg">
+            <thead className="bg-[#0A0A0A] text-[#A1A1A1] border-b border-[#262626] font-mono uppercase text-[11px]">
               <tr>
-                <th className="p-3 font-semibold">Tier Plan</th>
-                <th className="p-3 font-semibold">Price</th>
-                <th className="p-3 font-semibold">Video Length Cap</th>
-                <th className="p-3 font-semibold">Monthly Limit</th>
-                <th className="p-3 font-semibold">Cost Per Video</th>
+                <th className="p-3.5 font-medium">Tier Plan</th>
+                <th className="p-3.5 font-medium">Price</th>
+                <th className="p-3.5 font-medium">Video Length Cap</th>
+                <th className="p-3.5 font-medium">Monthly Limit</th>
+                <th className="p-3.5 font-medium">Cost Per Video</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#242938] text-white">
+            <tbody className="divide-y divide-[#262626] text-[#EDEDED] font-mono">
               <tr>
-                <td className="p-3 font-bold">Free Monthly Allotment</td>
-                <td className="p-3 text-[#10B981] font-bold">$0.00</td>
-                <td className="p-3">Up to 10 minutes</td>
-                <td className="p-3">2 videos / month</td>
-                <td className="p-3">$0.00</td>
+                <td className="p-3.5 font-medium text-white font-sans">Free Monthly Allotment</td>
+                <td className="p-3.5 text-[#10B981] font-semibold tabular-nums">$0.00</td>
+                <td className="p-3.5 font-sans">Up to 10 minutes</td>
+                <td className="p-3.5 font-sans">2 videos / month</td>
+                <td className="p-3.5 tabular-nums">$0.00</td>
               </tr>
               <tr>
-                <td className="p-3 font-bold">Creator Top-Up (10 Pack)</td>
-                <td className="p-3 text-[#FF5722] font-bold">$12.00 one-off</td>
-                <td className="p-3">Up to 60 minutes</td>
-                <td className="p-3">Pay-as-you-go</td>
-                <td className="p-3 font-semibold">$1.20 / video</td>
+                <td className="p-3.5 font-medium text-white font-sans">Creator Top-Up (10 Pack)</td>
+                <td className="p-3.5 text-[#FF5722] font-semibold tabular-nums">$12.00 / ₹999</td>
+                <td className="p-3.5 font-sans">Up to 60 minutes</td>
+                <td className="p-3.5 font-sans">Pay-as-you-go</td>
+                <td className="p-3.5 tabular-nums font-semibold">$1.20 / ₹99.90</td>
               </tr>
               <tr>
-                <td className="p-3 font-bold">Pro Pack (50 Pack)</td>
-                <td className="p-3 text-[#FFB800] font-bold">$49.00 one-off</td>
-                <td className="p-3">Up to 120 minutes</td>
-                <td className="p-3">Pay-as-you-go</td>
-                <td className="p-3 font-semibold">$0.98 / video</td>
+                <td className="p-3.5 font-medium text-white font-sans">Pro Pack (50 Pack)</td>
+                <td className="p-3.5 text-[#FFB800] font-semibold tabular-nums">$49.00 / ₹3,999</td>
+                <td className="p-3.5 font-sans">Up to 120 minutes</td>
+                <td className="p-3.5 font-sans">Pay-as-you-go</td>
+                <td className="p-3.5 tabular-nums font-semibold">$0.98 / ₹79.98</td>
               </tr>
             </tbody>
           </table>

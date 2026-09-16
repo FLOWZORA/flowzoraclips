@@ -1,18 +1,8 @@
 import type { Metadata } from 'next';
-import { Outfit, Plus_Jakarta_Sans, Noto_Sans_Devanagari } from 'next/font/google';
+import { GeistSans } from 'geist/font/sans';
+import { GeistMono } from 'geist/font/mono';
+import { Noto_Sans_Devanagari } from 'next/font/google';
 import './globals.css';
-
-const outfit = Outfit({
-  subsets: ['latin'],
-  variable: '--font-outfit',
-  display: 'swap',
-});
-
-const plusJakartaSans = Plus_Jakarta_Sans({
-  subsets: ['latin'],
-  variable: '--font-body',
-  display: 'swap',
-});
 
 const notoSansDevanagari = Noto_Sans_Devanagari({
   subsets: ['devanagari'],
@@ -67,9 +57,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`scroll-smooth ${outfit.variable} ${plusJakartaSans.variable} ${notoSansDevanagari.variable}`}
+      className={`scroll-smooth ${GeistSans.variable} ${GeistMono.variable} ${notoSansDevanagari.variable}`}
     >
-      <body className="bg-[#0A0B10] text-[#FFFFFF] font-sans antialiased selection:bg-[#FF5722]/30 selection:text-[#FF5722]">
+      <body className="bg-[#000000] text-[#EDEDED] font-sans antialiased selection:bg-[#FF5722]/30 selection:text-[#FF5722]">
         <div className="flex min-h-screen flex-col">{children}</div>
       </body>
     </html>

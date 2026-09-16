@@ -70,25 +70,25 @@ export default function Navbar() {
 
   return (
     <>
-      <header className="sticky top-0 z-40 border-b border-[#242938] bg-[#0A0B10]/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5 sm:px-6">
+      <header className="sticky top-0 z-40 border-b border-[#262626] bg-[#000000]/80 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
           {/* Brand Logo */}
-          <Link href="/" className="flex items-center gap-2.5 text-decoration-none">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#FF5722] text-white font-black text-lg shadow-sm">
+          <Link href="/" className="flex items-center gap-2.5 group">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[#FF5722] text-white font-bold text-sm shadow-sm transition-transform group-hover:scale-105">
               F
             </div>
-            <div>
-              <span className="font-extrabold text-lg tracking-tight text-white font-[var(--font-outfit)]">
+            <div className="flex items-center gap-1.5">
+              <span className="font-semibold text-base tracking-tight text-white">
                 FLOWZORA
               </span>
-              <span className="ml-1 text-xs font-semibold uppercase tracking-wider text-[#FFB800] bg-[#FFB800]/10 px-1.5 py-0.5 rounded">
+              <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-[#FFB800] bg-[#FFB800]/10 border border-[#FFB800]/20 px-1.5 py-0.5 rounded-[4px]">
                 Clips
               </span>
             </div>
           </Link>
 
           {/* Navigation Links */}
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-[#9AA2B6]">
+          <nav className="hidden md:flex items-center gap-6 text-sm text-[#A1A1A1]">
             <a href="#how-it-works" className="hover:text-white transition-colors">
               How It Works
             </a>
@@ -103,15 +103,15 @@ export default function Navbar() {
             </Link>
           </nav>
 
-          {/* Right Actions: Credit Counter + Auth */}
-          <div className="flex items-center gap-2.5 sm:gap-3">
+          {/* Right Actions: Credit Counter + Auth + Pill CTA */}
+          <div className="flex items-center gap-2 sm:gap-2.5">
             {/* Live Credit Counter Pill */}
-            <div className="flex items-center gap-1.5 rounded-full border border-[#2B3040] bg-[#141620] px-3 py-1 text-xs font-medium text-white shadow-inner">
-              <Zap className="h-3.5 w-3.5 text-[#FFB800] fill-[#FFB800]" />
-              <span>
+            <div className="flex items-center gap-1.5 rounded-full border border-[#262626] bg-[#0A0A0A] px-3 py-1 text-xs font-mono text-[#EDEDED]">
+              <Zap className="h-3 w-3 text-[#FFB800] fill-[#FFB800]" />
+              <span className="tabular-nums">
                 <strong className="text-white">{user?.creditsRemaining ?? 2}</strong>{' '}
-                <span className="text-[#9AA2B6]">
-                  {user?.plan === 'creator_topup' ? 'Top-Up vids' : 'Free vids left'}
+                <span className="text-[#A1A1A1] font-sans">
+                  {user?.plan === 'creator_topup' ? 'Top-Up vids' : 'Free vids'}
                 </span>
               </span>
             </div>
@@ -119,30 +119,32 @@ export default function Navbar() {
             {/* Auth / Sign In Button */}
             {user?.email ? (
               <div className="flex items-center gap-2">
-                <span className="hidden lg:inline-block text-xs text-[#9AA2B6] max-w-[120px] truncate" title={user.email}>
+                <span className="hidden lg:inline-block text-xs font-mono text-[#A1A1A1] max-w-[120px] truncate" title={user.email}>
                   {user.email}
                 </span>
                 <button
                   onClick={handleSignOut}
-                  className="rounded-lg border border-[#2B3040] bg-[#141620] p-1.5 text-[#9AA2B6] hover:text-white transition-colors"
+                  className="rounded-md border border-[#262626] bg-[#0A0A0A] p-1.5 text-[#A1A1A1] hover:text-white hover:border-[#383838] transition-colors focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:outline-none"
                   title="Sign out"
+                  aria-label="Sign out"
                 >
-                  <LogOut className="h-4 w-4" />
+                  <LogOut className="h-3.5 w-3.5" />
                 </button>
               </div>
             ) : (
               <button
                 onClick={() => setAuthModalOpen(true)}
-                className="flex items-center gap-1.5 rounded-lg border border-[#2B3040] bg-[#141620] px-3 py-1.5 text-xs font-semibold text-white hover:border-[#FF5722] transition-colors"
+                className="flex items-center gap-1.5 rounded-md border border-[#262626] bg-[#0A0A0A] px-2.5 py-1.5 text-xs font-medium text-[#EDEDED] hover:text-white hover:border-[#383838] transition-colors focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:outline-none"
               >
-                <User className="h-3.5 w-3.5 text-[#FF5722]" />
+                <User className="h-3 w-3 text-[#A1A1A1]" />
                 <span className="hidden sm:inline">Sign In</span>
               </button>
             )}
 
+            {/* Vercel-style Pill CTA */}
             <a
               href="#app"
-              className="inline-flex items-center justify-center rounded-lg bg-[#FF5722] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#F44336] transition-colors shadow-sm"
+              className="inline-flex items-center justify-center rounded-full bg-white px-4 py-1.5 text-xs font-medium text-black hover:bg-[#E5E5E5] transition-all shadow-sm focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:outline-none"
             >
               Create Clips
             </a>
