@@ -47,11 +47,6 @@ export default function FaqSection() {
       answer:
         'Competitors provide a single opaque "virality score" (e.g. "87%"). FLOWZORA Clips uses Google Gemini to evaluate each candidate segment across 4 transparent dimensions: Hook Strength (0–10), Standalone Coherence (0–10), Emotional Payoff (0–10), and Topic-Trend Alignment (0–10), complete with a one-line reasoning explanation explaining exactly why each clip works.',
     },
-    {
-      question: 'I have more questions. How can I contact you?',
-      answer:
-        'We love chatting with creators and podcast studios. Reach out directly via email at support@flowzora.com or connect with our engineering team at flowzora.com.',
-    },
   ];
 
   return (
@@ -75,19 +70,6 @@ export default function FaqSection() {
               </p>
             </div>
           ))}
-        </div>
-
-        {/* Attribution / Maker Note */}
-        <div className="mt-12 pt-8 border-t border-[#1C1C1C] text-center text-xs text-[#707070]">
-          Made with ♥ by{' '}
-          <a
-            href="https://flowzora.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[#A1A1A1] hover:text-white transition-colors underline underline-offset-4"
-          >
-            FLOWZORA
-          </a>
         </div>
       </div>
     </section>
