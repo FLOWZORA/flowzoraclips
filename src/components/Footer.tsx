@@ -17,6 +17,9 @@ export default function Footer() {
         </div>
 
         <div className="flex items-center gap-5 text-[#A1A1A1]">
+          <a href="#faq" className="hover:text-white transition-colors">
+            FAQ
+          </a>
           <a href="#scoring" className="hover:text-white transition-colors">
             Scoring Engine
           </a>

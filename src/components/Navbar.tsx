@@ -98,6 +98,9 @@ export default function Navbar() {
             <a href="#accuracy" className="hover:text-white transition-colors">
               Hindi/Hinglish Accuracy
             </a>
+            <a href="#faq" className="hover:text-white transition-colors">
+              FAQ
+            </a>
           </nav>
 
           {/* Right Actions: Free Beta Badge + Auth + Pill CTA */}
