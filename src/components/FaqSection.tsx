@@ -50,7 +50,7 @@ export default function FaqSection() {
   ];
 
   return (
-    <section id="faq" className="border-t border-[#262626] bg-[#000000] py-16 sm:py-24">
+    <section id="faq" className="relative border-t border-[#262626] bg-[#000000]/40 backdrop-blur-[2px] py-16 sm:py-24">
       <div className="mx-auto max-w-4xl px-4 sm:px-6">
         <div className="font-mono text-xs uppercase tracking-wider text-[#A1A1A1] mb-2">
           Knowledge Base

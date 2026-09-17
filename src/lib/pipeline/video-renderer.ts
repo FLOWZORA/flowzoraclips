@@ -75,7 +75,7 @@ export function buildVideoRenderJob(
         scriptPreference,
         videoWidth: reframe.outputWidth,
         videoHeight: reframe.outputHeight,
-        highlightColorHex: '#FF5722',
+        highlightColorHex: '#10B981',
       });
     }
   }

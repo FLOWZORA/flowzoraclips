@@ -83,14 +83,14 @@ export default function PricingTable() {
             </div>
 
             <div>
-              <div className="font-mono text-xs uppercase tracking-wider text-[#FF5722]">
+              <div className="font-mono text-xs uppercase tracking-wider text-[#10B981]">
                 Creator Top-Up
               </div>
               <div className="mt-3 flex items-baseline gap-2 flex-wrap font-mono">
                 <span className="text-3xl sm:text-4xl font-semibold text-white tabular-nums">
                   $12
                 </span>
-                <span className="text-xl sm:text-2xl font-medium text-[#FF5722] tabular-nums">
+                <span className="text-xl sm:text-2xl font-medium text-[#10B981] tabular-nums">
                   / ₹999
                 </span>
                 <span className="text-xs text-[#A1A1A1] font-sans">one-time pack</span>
@@ -103,27 +103,27 @@ export default function PricingTable() {
 
               <ul className="space-y-3 text-xs text-[#EDEDED]">
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FF5722] font-mono font-bold">✓</span>
+                  <span className="text-[#10B981] font-mono font-bold">✓</span>
                   <span>
                     <strong className="text-white">10 additional video credits</strong> (₹99/video)
                   </span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FF5722] font-mono font-bold">✓</span>
+                  <span className="text-[#10B981] font-mono font-bold">✓</span>
                   <span>
                     Up to <strong className="text-white">60 minutes</strong> per video
                   </span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FF5722] font-mono font-bold">✓</span>
+                  <span className="text-[#10B981] font-mono font-bold">✓</span>
                   <span>Priority transcription &amp; rendering queue</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FF5722] font-mono font-bold">✓</span>
+                  <span className="text-[#10B981] font-mono font-bold">✓</span>
                   <span>Multi-aspect exports (9:16, 1:1, 16:9)</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FF5722] font-mono font-bold">✓</span>
+                  <span className="text-[#10B981] font-mono font-bold">✓</span>
                   <span>Word-level filler-word trimming</span>
                 </li>
               </ul>
@@ -141,14 +141,14 @@ export default function PricingTable() {
           {/* Agency / High Volume */}
           <div className="rounded-xl border border-[#262626] bg-[#0A0A0A] p-6 flex flex-col justify-between hover:border-[#383838] transition-colors">
             <div>
-              <div className="font-mono text-xs uppercase tracking-wider text-[#FFB800]">
+              <div className="font-mono text-xs uppercase tracking-wider text-[#10B981]">
                 Pro Pack / Agency
               </div>
               <div className="mt-3 flex items-baseline gap-2 flex-wrap font-mono">
                 <span className="text-3xl sm:text-4xl font-semibold text-white tabular-nums">
                   $49
                 </span>
-                <span className="text-xl sm:text-2xl font-medium text-[#FFB800] tabular-nums">
+                <span className="text-xl sm:text-2xl font-medium text-[#10B981] tabular-nums">
                   / ₹3,999
                 </span>
                 <span className="text-xs text-[#A1A1A1] font-sans">one-time pack</span>
@@ -161,27 +161,27 @@ export default function PricingTable() {
 
               <ul className="space-y-3 text-xs text-[#EDEDED]">
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FFB800] font-mono font-bold">✓</span>
+                  <span className="text-[#10B981] font-mono font-bold">✓</span>
                   <span>
                     <strong className="text-white">50 video credits</strong> ($0.98/video)
                   </span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FFB800] font-mono font-bold">✓</span>
+                  <span className="text-[#10B981] font-mono font-bold">✓</span>
                   <span>
                     Up to <strong className="text-white">120 minutes</strong> per episode
                   </span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FFB800] font-mono font-bold">✓</span>
+                  <span className="text-[#10B981] font-mono font-bold">✓</span>
                   <span>Bulk batch export</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FFB800] font-mono font-bold">✓</span>
+                  <span className="text-[#10B981] font-mono font-bold">✓</span>
                   <span>Dedicated worker rendering priority</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-[#FFB800] font-mono font-bold">✓</span>
+                  <span className="text-[#10B981] font-mono font-bold">✓</span>
                   <span>Phase 2 API early access</span>
                 </li>
               </ul>
@@ -198,8 +198,8 @@ export default function PricingTable() {
         </div>
 
         {/* Plain HTML Table for Direct Crawler Certainty (Rule B) */}
-        <div className="mt-12 overflow-x-auto">
-          <table className="w-full text-left text-xs border border-[#262626] rounded-lg">
+        <div className="mt-12 overflow-x-auto pb-2">
+          <table className="w-full min-w-[560px] text-left text-xs border border-[#262626] rounded-lg">
             <thead className="bg-[#0A0A0A] text-[#A1A1A1] border-b border-[#262626] font-mono uppercase text-[11px]">
               <tr>
                 <th className="p-3.5 font-medium">Tier Plan</th>
@@ -219,14 +219,14 @@ export default function PricingTable() {
               </tr>
               <tr>
                 <td className="p-3.5 font-medium text-white font-sans">Creator Top-Up (10 Pack)</td>
-                <td className="p-3.5 text-[#FF5722] font-semibold tabular-nums">$12.00 / ₹999</td>
+                <td className="p-3.5 text-[#10B981] font-semibold tabular-nums">$12.00 / ₹999</td>
                 <td className="p-3.5 font-sans">Up to 60 minutes</td>
                 <td className="p-3.5 font-sans">Pay-as-you-go</td>
                 <td className="p-3.5 tabular-nums font-semibold">$1.20 / ₹99.90</td>
               </tr>
               <tr>
                 <td className="p-3.5 font-medium text-white font-sans">Pro Pack (50 Pack)</td>
-                <td className="p-3.5 text-[#FFB800] font-semibold tabular-nums">$49.00 / ₹3,999</td>
+                <td className="p-3.5 text-[#10B981] font-semibold tabular-nums">$49.00 / ₹3,999</td>
                 <td className="p-3.5 font-sans">Up to 120 minutes</td>
                 <td className="p-3.5 font-sans">Pay-as-you-go</td>
                 <td className="p-3.5 tabular-nums font-semibold">$0.98 / ₹79.98</td>

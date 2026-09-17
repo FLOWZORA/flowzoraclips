@@ -315,44 +315,44 @@ export default function HeroUploader() {
       {/* Main Tool Container */}
       <div className="rounded-xl border border-[#262626] bg-[#0A0A0A] shadow-[0_0_60px_-15px_rgba(0,0,0,0.8)] p-4 sm:p-6 lg:p-8">
         {/* Top Controls Bar */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#262626] pb-5">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 border-b border-[#262626] pb-5">
           {/* Input Method Switcher */}
-          <div className="flex items-center gap-1 rounded-lg bg-[#111111] p-1 border border-[#262626]">
+          <div className="flex items-center gap-1 rounded-lg bg-[#111111] p-1 border border-[#262626] w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setActiveTab('upload')}
-              className={`flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs font-medium transition-all cursor-pointer ${
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 rounded-md px-3 sm:px-3.5 py-2 sm:py-1.5 text-xs font-medium transition-all cursor-pointer min-h-[38px] ${
                 activeTab === 'upload'
                   ? 'bg-[#222222] text-white shadow-sm border border-[#333333]'
                   : 'text-[#A1A1A1] hover:text-white'
               }`}
             >
               <Upload className="h-3.5 w-3.5" />
-              Upload Audio / Video
+              <span>Upload File</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('url')}
-              className={`flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs font-medium transition-all cursor-pointer ${
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 rounded-md px-3 sm:px-3.5 py-2 sm:py-1.5 text-xs font-medium transition-all cursor-pointer min-h-[38px] ${
                 activeTab === 'url'
                   ? 'bg-[#222222] text-white shadow-sm border border-[#333333]'
                   : 'text-[#A1A1A1] hover:text-white'
               }`}
             >
               <Link2 className="h-3.5 w-3.5" />
-              YouTube URL
+              <span>YouTube URL</span>
             </button>
           </div>
 
           {/* Language & Script Selector Dropdowns */}
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-mono text-[#A1A1A1]">AUDIO:</label>
-              <div className="relative">
+          <div className="flex flex-col xs:flex-row items-stretch xs:items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
+            <div className="flex items-center gap-2 flex-1 sm:flex-initial">
+              <label className="text-xs font-mono text-[#A1A1A1] shrink-0">AUDIO:</label>
+              <div className="relative flex-1">
                 <select
                   value={language}
                   onChange={(e) => setLanguage(e.target.value as any)}
-                  className="appearance-none rounded-md border border-[#262626] bg-[#111111] pl-2.5 pr-8 py-1.5 text-xs text-[#EDEDED] focus:outline-none focus:border-[#555555] transition-colors cursor-pointer"
+                  className="w-full appearance-none rounded-md border border-[#262626] bg-[#111111] pl-2.5 pr-8 py-1.5 text-xs text-[#EDEDED] focus:outline-none focus:border-[#555555] transition-colors cursor-pointer min-h-[36px]"
                 >
                   <option value="hinglish" className="bg-[#111111] text-[#EDEDED]">Hinglish (Hindi + English)</option>
                   <option value="hindi" className="bg-[#111111] text-[#EDEDED]">Hindi (हिन्दी)</option>
@@ -363,15 +363,15 @@ export default function HeroUploader() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-mono text-[#A1A1A1]">CAPTIONS:</label>
-              <div className="relative">
+            <div className="flex items-center gap-2 flex-1 sm:flex-initial">
+              <label className="text-xs font-mono text-[#A1A1A1] shrink-0">CAPTIONS:</label>
+              <div className="relative flex-1">
                 <select
                   value={scriptPreference}
                   onChange={(e) => setScriptPreference(e.target.value as any)}
-                  className="appearance-none rounded-md border border-[#262626] bg-[#111111] pl-2.5 pr-8 py-1.5 text-xs text-[#EDEDED] focus:outline-none focus:border-[#555555] transition-colors cursor-pointer"
+                  className="w-full appearance-none rounded-md border border-[#262626] bg-[#111111] pl-2.5 pr-8 py-1.5 text-xs text-[#EDEDED] focus:outline-none focus:border-[#555555] transition-colors cursor-pointer min-h-[36px]"
                 >
-                  <option value="romanized" className="bg-[#111111] text-[#EDEDED]">Romanized (Latin Script)</option>
+                  <option value="romanized" className="bg-[#111111] text-[#EDEDED]">Romanized (Latin)</option>
                   <option value="devanagari" className="bg-[#111111] text-[#EDEDED]">Devanagari (देवनागरी)</option>
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#A1A1A1]" />
@@ -397,7 +397,7 @@ export default function HeroUploader() {
                 }
               }}
               onClick={() => fileInputRef.current?.click()}
-              className={`relative rounded-xl border border-dashed transition-all p-8 text-center cursor-pointer group ${
+              className={`relative rounded-xl border border-dashed transition-all p-5 sm:p-8 text-center cursor-pointer group ${
                 isDragging
                   ? 'border-white bg-[#111111] scale-[1.01]'
                   : selectedFile
@@ -417,7 +417,7 @@ export default function HeroUploader() {
               <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-[#111111] border border-[#262626] text-[#EDEDED] group-hover:scale-105 transition-transform pointer-events-none">
                 <Upload className="h-5 w-5" />
               </div>
-              <p className="mt-3 text-sm font-medium text-white pointer-events-none">
+              <p className="mt-3 text-xs sm:text-sm font-medium text-white pointer-events-none">
                 {selectedFile ? (
                   <span>
                     {selectedFile.name}{' '}
@@ -427,12 +427,12 @@ export default function HeroUploader() {
                   </span>
                 ) : (
                   <span>
-                    Drop long-form podcast or video here, or <span className="underline underline-offset-4 text-white">click to browse</span>
+                    Drop podcast or video here, or <span className="underline underline-offset-4 text-white">tap to browse</span>
                   </span>
                 )}
               </p>
-              <p className="mt-1 text-xs text-[#A1A1A1] pointer-events-none">
-                Direct Cloudflare R2 Presigned Uploads • Supports MP4, MOV, MP3, WAV
+              <p className="mt-1 text-[11px] sm:text-xs text-[#A1A1A1] pointer-events-none">
+                Cloudflare R2 Direct Uploads • MP4, MOV, MP3, WAV
               </p>
 
               {/* If file is selected, show change/remove controls */}
@@ -514,7 +514,7 @@ export default function HeroUploader() {
                           ✓ Free Beta (≤60m)
                         </span>
                       ) : (
-                        <span className="rounded bg-[#FF5722]/15 text-[#FF5722] px-2 py-0.5 text-[11px] font-bold">
+                        <span className="rounded bg-[#EF4444]/15 text-[#EF4444] px-2 py-0.5 text-[11px] font-bold">
                           ⚠ Exceeds Limit (&gt;60m)
                         </span>
                       )}
@@ -550,7 +550,7 @@ export default function HeroUploader() {
                 <button
                   type="button"
                   onClick={() => setAuthModalOpen(true)}
-                  className="rounded-lg bg-[#FF5722] px-3.5 py-1.5 text-xs font-bold text-white hover:bg-[#F44336]"
+                  className="rounded-lg bg-[#10B981] px-3.5 py-1.5 text-xs font-bold text-black hover:bg-[#059669]"
                 >
                   Sign In with Magic Link
                 </button>
@@ -562,7 +562,7 @@ export default function HeroUploader() {
         {/* Action Button & Processing Indicator */}
         <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
           {statusMessage ? (
-            <div className="flex items-center gap-2 text-xs text-[#FFB800] animate-pulse">
+            <div className="flex items-center gap-2 text-xs text-[#10B981] animate-pulse">
               <Sparkles className="h-4 w-4" />
               <span>{statusMessage}</span>
             </div>
@@ -584,7 +584,7 @@ export default function HeroUploader() {
             disabled={isProcessing}
             className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-full bg-white text-black hover:bg-[#E5E5E5] px-7 py-2.5 text-xs font-semibold shadow-sm transition-all focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:outline-none disabled:opacity-50 cursor-pointer"
           >
-            <Sparkles className="h-3.5 w-3.5 text-[#FFB800]" />
+            <Sparkles className="h-3.5 w-3.5 text-[#10B981]" />
             {isProcessing ? 'Processing Pipeline…' : 'Generate Ranked Highlights'}
           </button>
         </div>
@@ -603,30 +603,30 @@ export default function HeroUploader() {
                 </p>
               </div>
 
-              <div className="flex items-center rounded-lg bg-[#111111] p-1 border border-[#262626]">
+              <div className="grid grid-cols-1 xs:grid-cols-2 sm:flex sm:items-center rounded-lg bg-[#111111] p-1 border border-[#262626] w-full sm:w-auto gap-1">
                 <button
                   type="button"
                   onClick={() => setViewMode('flowzora')}
-                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all cursor-pointer ${
+                  className={`flex items-center justify-center gap-1.5 rounded-md px-3 py-2 sm:py-1.5 text-xs font-medium transition-all cursor-pointer min-h-[36px] ${
                     viewMode === 'flowzora'
                       ? 'bg-[#222222] text-white shadow-sm border border-[#333333]'
                       : 'text-[#A1A1A1] hover:text-white'
                   }`}
                 >
-                  <Sparkles className="h-3.5 w-3.5 text-[#FFB800]" />
-                  FLOWZORA (Semantic + Gemini)
+                  <Sparkles className="h-3.5 w-3.5 text-[#10B981] shrink-0" />
+                  <span>FLOWZORA (Semantic)</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setViewMode('naive')}
-                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all cursor-pointer ${
+                  className={`flex items-center justify-center gap-1.5 rounded-md px-3 py-2 sm:py-1.5 text-xs font-medium transition-all cursor-pointer min-h-[36px] ${
                     viewMode === 'naive'
                       ? 'bg-[#222222] text-white shadow-sm border border-[#333333]'
                       : 'text-[#A1A1A1] hover:text-white'
                   }`}
                 >
-                  <SplitSquareVertical className="h-3.5 w-3.5 text-[#EF4444]" />
-                  Clipzi / Naive 60s Cuts
+                  <SplitSquareVertical className="h-3.5 w-3.5 text-[#EF4444] shrink-0" />
+                  <span>Clipzi / Naive Cuts</span>
                 </button>
               </div>
             </div>
@@ -636,10 +636,10 @@ export default function HeroUploader() {
               <div>
                 {/* Timeline Waveform Visualization */}
                 <div className="mb-6 rounded-xl border border-[#2B3040] bg-[#0A0B10] p-4">
-                  <div className="flex items-center justify-between text-xs text-[#9AA2B6] mb-2">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 text-xs text-[#9AA2B6] mb-2">
                     <span className="font-semibold text-white">Full Source Audio ({stats.duration}s)</span>
                     <span className="text-[#10B981] font-bold">
-                      {rankedClips.length} Quality-Gated Highlights Found (Deduplicated)
+                      {rankedClips.length} Quality-Gated Highlights Found
                     </span>
                   </div>
 
@@ -660,10 +660,10 @@ export default function HeroUploader() {
                       const leftPercent = Math.min(90, Math.max(2, (clip.startTime / stats.duration) * 100));
                       const widthPercent = Math.min(30, Math.max(8, (clip.duration / stats.duration) * 100));
                       const colors = [
-                        'bg-[#FF5722] border-[#FF5722]',
-                        'bg-[#FFB800] border-[#FFB800] text-[#0A0B10]',
-                        'bg-[#3B82F6] border-[#3B82F6]',
-                        'bg-[#10B981] border-[#10B981]',
+                        'bg-[#10B981] border-[#10B981] text-black',
+                        'bg-[#059669] border-[#059669] text-white',
+                        'bg-[#047857] border-[#047857] text-white',
+                        'bg-[#34D399] border-[#34D399] text-black',
                       ];
                       const color = colors[i % colors.length];
 
@@ -682,7 +682,8 @@ export default function HeroUploader() {
 
                   <div className="mt-2 flex items-center justify-between text-[11px] text-[#626B82]">
                     <span>00:00</span>
-                    <span>Semantic sentence boundary snapping • No mid-sentence cuts</span>
+                    <span className="hidden sm:inline">Semantic sentence boundary snapping • No mid-sentence cuts</span>
+                    <span className="sm:hidden text-[10px]">Semantic Snapping</span>
                     <span>{stats.duration}s</span>
                   </div>
                 </div>
@@ -692,12 +693,12 @@ export default function HeroUploader() {
                   {rankedClips.map((clip) => (
                     <div
                       key={clip.id}
-                      className="flex flex-col justify-between rounded-xl border border-[#262626] bg-[#050505] p-5 hover:border-[#383838] transition-all shadow-md"
+                      className="flex flex-col justify-between rounded-xl border border-[#262626] bg-[#050505] p-4 sm:p-5 hover:border-[#383838] transition-all shadow-md"
                     >
                       <div>
                         {/* Header: Rank + Composite Score */}
                         <div className="flex items-center justify-between mb-3">
-                          <span className="flex items-center gap-1.5 rounded-md bg-[#FF5722]/10 border border-[#FF5722]/20 px-2.5 py-1 text-xs font-mono font-semibold text-[#FF5722]">
+                          <span className="flex items-center gap-1.5 rounded-md bg-[#10B981]/10 border border-[#10B981]/20 px-2.5 py-1 text-xs font-mono font-semibold text-[#10B981]">
                             <Flame className="h-3.5 w-3.5" />
                             RANK #{clip.rank}
                           </span>
@@ -736,7 +737,7 @@ export default function HeroUploader() {
                         </div>
 
                         {/* Gemini Transparent Reasoning */}
-                        <div className="mt-3 text-xs italic text-[#A1A1A1] border-l-2 border-[#FF5722] pl-2.5 py-0.5">
+                        <div className="mt-3 text-xs italic text-[#A1A1A1] border-l-2 border-[#10B981] pl-2.5 py-0.5">
                           “{clip.score.reasoning}”
                         </div>
 
@@ -748,13 +749,13 @@ export default function HeroUploader() {
 
                       {/* Trimmer Controls & Action */}
                       <div className="mt-5 pt-3 border-t border-[#262626]">
-                        <div className="flex items-center justify-between text-xs text-[#A1A1A1] mb-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#A1A1A1] mb-3">
                           <span className="font-mono text-[11px] text-[#707070]">NUDGE:</span>
-                          <div className="flex items-center gap-1.5 font-mono text-xs">
+                          <div className="flex flex-wrap items-center gap-1 font-mono text-xs">
                             <button
                               type="button"
                               onClick={() => handleNudge(clip.id, 'start', -1)}
-                              className="rounded-md bg-[#111111] border border-[#262626] px-2 py-0.5 hover:bg-[#222222] text-[#EDEDED] transition-colors cursor-pointer"
+                              className="rounded-md bg-[#111111] border border-[#262626] px-2 py-1 sm:py-0.5 hover:bg-[#222222] text-[#EDEDED] transition-colors cursor-pointer min-h-[28px]"
                               title="Start -1s"
                             >
                               -1s
@@ -762,16 +763,16 @@ export default function HeroUploader() {
                             <button
                               type="button"
                               onClick={() => handleNudge(clip.id, 'start', 1)}
-                              className="rounded-md bg-[#111111] border border-[#262626] px-2 py-0.5 hover:bg-[#222222] text-[#EDEDED] transition-colors cursor-pointer"
+                              className="rounded-md bg-[#111111] border border-[#262626] px-2 py-1 sm:py-0.5 hover:bg-[#222222] text-[#EDEDED] transition-colors cursor-pointer min-h-[28px]"
                               title="Start +1s"
                             >
                               +1s
                             </button>
-                            <span className="text-[#383838]">|</span>
+                            <span className="text-[#383838] hidden xs:inline">|</span>
                             <button
                               type="button"
                               onClick={() => handleNudge(clip.id, 'end', -1)}
-                              className="rounded-md bg-[#111111] border border-[#262626] px-2 py-0.5 hover:bg-[#222222] text-[#EDEDED] transition-colors cursor-pointer"
+                              className="rounded-md bg-[#111111] border border-[#262626] px-2 py-1 sm:py-0.5 hover:bg-[#222222] text-[#EDEDED] transition-colors cursor-pointer min-h-[28px]"
                               title="End -1s"
                             >
                               End -1s
@@ -779,7 +780,7 @@ export default function HeroUploader() {
                             <button
                               type="button"
                               onClick={() => handleNudge(clip.id, 'end', 1)}
-                              className="rounded-md bg-[#111111] border border-[#262626] px-2 py-0.5 hover:bg-[#222222] text-[#EDEDED] transition-colors cursor-pointer"
+                              className="rounded-md bg-[#111111] border border-[#262626] px-2 py-1 sm:py-0.5 hover:bg-[#222222] text-[#EDEDED] transition-colors cursor-pointer min-h-[28px]"
                               title="End +1s"
                             >
                               End +1s
@@ -791,28 +792,28 @@ export default function HeroUploader() {
                           <button
                             type="button"
                             onClick={() => setPreviewClip(clip)}
-                            className="flex-1 flex items-center justify-center gap-1.5 rounded-md bg-white py-2 text-xs font-semibold text-black hover:bg-[#E5E5E5] transition-colors shadow-sm cursor-pointer"
+                            className="flex-1 flex items-center justify-center gap-1.5 rounded-md bg-white py-2 text-xs font-semibold text-black hover:bg-[#E5E5E5] transition-colors shadow-sm cursor-pointer min-h-[38px]"
                           >
                             <Play className="h-3 w-3 fill-black" />
-                            Preview 9:16
+                            <span>Preview 9:16</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => setSocialCopyClip(clip)}
-                            className="flex items-center justify-center gap-1 rounded-md border border-[#262626] bg-[#111111] px-2.5 py-2 text-xs font-medium text-[#EDEDED] hover:border-[#383838] transition-colors cursor-pointer"
+                            className="flex items-center justify-center gap-1 rounded-md border border-[#262626] bg-[#111111] px-3 py-2 text-xs font-medium text-[#EDEDED] hover:border-[#383838] transition-colors cursor-pointer min-h-[38px]"
                             title="Generate Social Copy"
                           >
-                            <Sparkles className="h-3.5 w-3.5 text-[#FFB800]" />
-                            <span className="hidden sm:inline">Social</span>
+                            <Sparkles className="h-3.5 w-3.5 text-[#10B981]" />
+                            <span className="hidden xs:inline">Social</span>
                           </button>
                           <a
                             href={`/api/export/render?clipId=${clip.id}&download=true&format=9:16`}
                             download={`flowzora_${clip.id}.mp4`}
-                            className="flex items-center justify-center gap-1 rounded-md border border-[#262626] bg-[#111111] px-2.5 py-2 text-xs font-medium text-[#EDEDED] hover:border-[#383838] transition-colors"
+                            className="flex items-center justify-center gap-1 rounded-md border border-[#262626] bg-[#111111] px-3 py-2 text-xs font-medium text-[#EDEDED] hover:border-[#383838] transition-colors min-h-[38px]"
                             title="Download 9:16 MP4"
                           >
                             <Download className="h-3.5 w-3.5" />
-                            <span className="hidden sm:inline">Export</span>
+                            <span className="hidden xs:inline">Export</span>
                           </a>
                         </div>
                       </div>

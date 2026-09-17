@@ -2,11 +2,12 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Sparkles, User, Zap, LogOut } from 'lucide-react';
+import { Sparkles, User, Zap, LogOut, Menu, X } from 'lucide-react';
 import AuthModal from './AuthModal';
 
 export default function Navbar() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [user, setUser] = useState<{
     id: string;
     email: string;
@@ -89,37 +90,43 @@ export default function Navbar() {
 
           {/* Navigation Links */}
           <nav className="hidden md:flex items-center gap-6 text-sm text-[#A1A1A1]">
-            <a href="#how-it-works" className="hover:text-white transition-colors">
+            <Link href="/#how-it-works" className="hover:text-white transition-colors">
               How It Works
-            </a>
-            <a href="#scoring" className="hover:text-white transition-colors">
-              Transparent Scoring
-            </a>
-            <a href="#accuracy" className="hover:text-white transition-colors">
-              Hindi/Hinglish Accuracy
-            </a>
-            <a href="#faq" className="hover:text-white transition-colors">
+            </Link>
+            <Link href="/#scoring" className="hover:text-white transition-colors">
+              Scoring
+            </Link>
+            <Link href="/#accuracy" className="hover:text-white transition-colors">
+              Accuracy
+            </Link>
+            <Link href="/about" className="hover:text-white transition-colors">
+              About
+            </Link>
+            <Link href="/contact" className="hover:text-white transition-colors">
+              Contact
+            </Link>
+            <Link href="/#faq" className="hover:text-white transition-colors">
               FAQ
-            </a>
+            </Link>
           </nav>
 
           {/* Right Actions: Free Beta Badge + Auth + Pill CTA */}
-          <div className="flex items-center gap-2 sm:gap-2.5">
-            {/* 100% Free Beta Pill */}
-            <div className="flex items-center gap-1.5 rounded-full border border-[#10B981]/30 bg-[#10B981]/10 px-3 py-1 text-xs font-medium text-[#10B981]">
+          <div className="flex items-center gap-1.5 sm:gap-2.5">
+            {/* 100% Free Beta Pill - visible on sm+ to prevent header crowding */}
+            <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-[#10B981]/30 bg-[#10B981]/10 px-3 py-1 text-xs font-medium text-[#10B981]">
               <Sparkles className="h-3 w-3 text-[#10B981]" />
               <span>100% Free Beta</span>
             </div>
 
             {/* Auth / Sign In Button */}
             {user?.email ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <span className="hidden lg:inline-block text-xs font-mono text-[#A1A1A1] max-w-[120px] truncate" title={user.email}>
                   {user.email}
                 </span>
                 <button
                   onClick={handleSignOut}
-                  className="rounded-md border border-[#262626] bg-[#0A0A0A] p-1.5 text-[#A1A1A1] hover:text-white hover:border-[#383838] transition-colors focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:outline-none"
+                  className="rounded-md border border-[#262626] bg-[#0A0A0A] p-2 text-[#A1A1A1] hover:text-white hover:border-[#383838] transition-colors focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:outline-none min-h-[36px] min-w-[36px] flex items-center justify-center"
                   title="Sign out"
                   aria-label="Sign out"
                 >
@@ -129,22 +136,102 @@ export default function Navbar() {
             ) : (
               <button
                 onClick={() => setAuthModalOpen(true)}
-                className="flex items-center gap-1.5 rounded-md border border-[#262626] bg-[#0A0A0A] px-2.5 py-1.5 text-xs font-medium text-[#EDEDED] hover:text-white hover:border-[#383838] transition-colors focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:outline-none"
+                className="flex items-center gap-1.5 rounded-md border border-[#262626] bg-[#0A0A0A] px-2.5 py-1.5 text-xs font-medium text-[#EDEDED] hover:text-white hover:border-[#383838] transition-colors focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:outline-none min-h-[36px]"
               >
-                <User className="h-3 w-3 text-[#A1A1A1]" />
-                <span className="hidden sm:inline">Sign In</span>
+                <User className="h-3.5 w-3.5 text-[#A1A1A1]" />
+                <span className="hidden xs:inline">Sign In</span>
               </button>
             )}
 
             {/* Vercel-style Pill CTA */}
-            <a
-              href="#app"
-              className="inline-flex items-center justify-center rounded-full bg-white px-4 py-1.5 text-xs font-medium text-black hover:bg-[#E5E5E5] transition-all shadow-sm focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:outline-none"
+            <Link
+              href="/#app"
+              className="inline-flex items-center justify-center rounded-full bg-white px-3 sm:px-4 py-1.5 text-xs font-medium text-black hover:bg-[#E5E5E5] transition-all shadow-sm focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:outline-none cursor-pointer min-h-[36px]"
             >
               Create Clips
-            </a>
+            </Link>
+
+            {/* Mobile Menu Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="md:hidden flex items-center justify-center rounded-md border border-[#262626] bg-[#0A0A0A] p-2 text-[#A1A1A1] hover:text-white transition-colors cursor-pointer min-h-[36px] min-w-[36px]"
+              aria-label="Toggle Navigation Menu"
+              aria-expanded={mobileMenuOpen}
+            >
+              {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+            </button>
           </div>
         </div>
+
+        {/* Mobile Navigation Drawer */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-[#262626] bg-[#0A0A0A]/95 backdrop-blur-md px-4 py-4 space-y-2 animate-in fade-in slide-in-from-top-2 duration-150">
+            {/* Mobile Free Beta Badge */}
+            <div className="flex sm:hidden items-center justify-between py-2 px-3 rounded-lg bg-[#10B981]/10 border border-[#10B981]/20 text-xs font-medium text-[#10B981] mb-2">
+              <span className="flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-[#10B981]" />
+                100% Free Beta
+              </span>
+              <span className="text-[11px] font-mono text-[#10B981]/80">Unlimited</span>
+            </div>
+
+            <Link
+              href="/#how-it-works"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center text-sm font-medium text-[#EDEDED] hover:text-white hover:bg-[#141414] py-2.5 px-3 rounded-lg transition-colors min-h-[44px]"
+            >
+              How It Works
+            </Link>
+            <Link
+              href="/#scoring"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center text-sm font-medium text-[#A1A1A1] hover:text-white hover:bg-[#141414] py-2.5 px-3 rounded-lg transition-colors min-h-[44px]"
+            >
+              Transparent Scoring
+            </Link>
+            <Link
+              href="/#accuracy"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center text-sm font-medium text-[#A1A1A1] hover:text-white hover:bg-[#141414] py-2.5 px-3 rounded-lg transition-colors min-h-[44px]"
+            >
+              Hindi/Hinglish Accuracy
+            </Link>
+            <Link
+              href="/about"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center text-sm font-medium text-[#A1A1A1] hover:text-white hover:bg-[#141414] py-2.5 px-3 rounded-lg transition-colors min-h-[44px]"
+            >
+              About Us
+            </Link>
+            <Link
+              href="/contact"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center text-sm font-medium text-[#A1A1A1] hover:text-white hover:bg-[#141414] py-2.5 px-3 rounded-lg transition-colors min-h-[44px]"
+            >
+              Contact Us
+            </Link>
+            <Link
+              href="/#faq"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center text-sm font-medium text-[#A1A1A1] hover:text-white hover:bg-[#141414] py-2.5 px-3 rounded-lg transition-colors min-h-[44px]"
+            >
+              FAQ
+            </Link>
+
+            {user?.email && (
+              <div className="pt-2 border-t border-[#262626] flex items-center justify-between text-xs text-[#A1A1A1] px-3">
+                <span className="truncate max-w-[200px]">{user.email}</span>
+                <button
+                  onClick={handleSignOut}
+                  className="text-xs text-[#EF4444] hover:underline py-1"
+                >
+                  Sign Out
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </header>
 
       {/* Auth Modal */}

@@ -58,19 +58,20 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModal
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="relative w-full max-w-md rounded-2xl border border-[#2B3040] bg-[#141620] p-6 sm:p-8 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
+      <div className="relative w-full max-w-md rounded-2xl border border-[#2B3040] bg-[#141620] p-5 sm:p-8 shadow-2xl">
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-[#9AA2B6] hover:text-white transition-colors"
+          className="absolute top-3 right-3 z-30 flex h-8 w-8 items-center justify-center rounded-full bg-[#1E2230]/80 text-[#9AA2B6] hover:text-white transition-colors cursor-pointer"
+          aria-label="Close modal"
         >
-          <X className="h-5 w-5" />
+          <X className="h-4 w-4" />
         </button>
 
         {/* Brand Header */}
-        <div className="flex items-center gap-2 mb-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#FF5722] text-white font-black text-sm">
+        <div className="flex items-center gap-2 mb-2 pr-8">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#10B981] text-black font-black text-sm">
             F
           </div>
           <span className="font-extrabold text-sm tracking-tight text-white font-[var(--font-outfit)]">
@@ -112,14 +113,14 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModal
                   placeholder="podcast@creator.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full rounded-lg border border-[#2B3040] bg-[#0A0B10] pl-10 pr-4 py-2.5 text-sm text-white placeholder-[#626B82] focus:border-[#FF5722] focus:outline-none"
+                  className="w-full rounded-lg border border-[#2B3040] bg-[#0A0B10] pl-10 pr-4 py-2.5 text-sm text-white placeholder-[#626B82] focus:border-[#10B981] focus:outline-none"
                 />
               </div>
             </div>
 
             {error && (
               <div className="flex items-center gap-2 rounded-lg bg-[#EF4444]/10 border border-[#EF4444]/30 p-2.5 text-xs text-[#EF4444]">
-                <AlertCircle className="h-4 w-4 shrink-0" />
+                <AlertCircle className="h-4 w-4 shrink-0 text-[#EF4444]" />
                 <span>{error}</span>
               </div>
             )}
@@ -127,16 +128,16 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModal
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#FF5722] to-[#FF3B30] py-2.5 text-xs font-bold text-white shadow-lg hover:opacity-95 transition-opacity disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#10B981] to-[#059669] py-2.5 text-xs font-bold text-black shadow-lg hover:opacity-95 transition-opacity disabled:opacity-50"
             >
               {loading ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin text-white" />
+                  <Loader2 className="h-4 w-4 animate-spin text-black" />
                   <span>Sending Magic Link...</span>
                 </>
               ) : (
                 <>
-                  <Sparkles className="h-4 w-4 text-[#FFB800]" />
+                  <Sparkles className="h-4 w-4 text-black" />
                   <span>Send Magic Link</span>
                 </>
               )}

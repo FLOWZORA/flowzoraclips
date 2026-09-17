@@ -2,7 +2,7 @@ import React from 'react';
 
 export default function HindiBenchmarkCallout() {
   return (
-    <section id="accuracy" className="border-t border-[#262626] bg-[#000000] py-16 sm:py-24">
+    <section id="accuracy" className="relative border-t border-[#262626] bg-[#000000]/40 backdrop-blur-[2px] py-16 sm:py-24">
       <div className="mx-auto max-w-5xl px-4 sm:px-6">
         <div className="max-w-2xl">
           <div className="font-mono text-xs uppercase tracking-wider text-[#A1A1A1] mb-2">

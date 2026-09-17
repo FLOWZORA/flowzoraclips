@@ -7,10 +7,10 @@
     --color-bg-surface-elevated: #1e2230;
     --color-bg-subtle: #12141c;
     
-    --color-brand-primary: #ff5722;
-    --color-brand-primary-hover: #f44336;
-    --color-brand-accent: #ffb800;
-    --color-brand-glow: rgba(255, 87, 34, 0.25);
+    --color-brand-primary: #10b981;
+    --color-brand-primary-hover: #059669;
+    --color-brand-accent: #34d399;
+    --color-brand-glow: rgba(16, 185, 129, 0.25);
     
     --color-border-subtle: #242938;
     --color-border-strong: #3b4257;
@@ -20,7 +20,7 @@
     --color-text-muted: #626b82;
 
     --color-score-high: #10b981;
-    --color-score-mid: #f59e0b;
+    --color-score-mid: #10b981;
     --color-score-low: #ef4444;
 
     --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;

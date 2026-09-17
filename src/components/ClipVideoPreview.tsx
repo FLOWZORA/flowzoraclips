@@ -85,10 +85,10 @@ export default function ClipVideoPreview({
 
   const aspectRatioClass =
     aspectRatio === '9:16'
-      ? 'w-[280px] h-[498px]'
+      ? 'w-full max-w-[240px] sm:max-w-[280px] aspect-[9/16]'
       : aspectRatio === '1:1'
-      ? 'w-[340px] h-[340px]'
-      : 'w-[460px] h-[258px]';
+      ? 'w-full max-w-[260px] sm:max-w-[340px] aspect-square'
+      : 'w-full max-w-[320px] sm:max-w-[460px] aspect-video';
 
   const [isExporting, setIsExporting] = useState(false);
   const [socialCopyOpen, setSocialCopyOpen] = useState(false);
@@ -128,32 +128,33 @@ export default function ClipVideoPreview({
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-2 sm:p-4">
-        <div className="relative w-full max-w-4xl max-h-[95vh] overflow-y-auto rounded-2xl border border-[#2B3040] bg-[#141620] p-4 sm:p-6 shadow-2xl flex flex-col md:flex-row gap-6">
+        <div className="relative w-full max-w-4xl max-h-[92vh] overflow-y-auto rounded-2xl border border-[#2B3040] bg-[#141620] p-3.5 sm:p-6 shadow-2xl flex flex-col md:flex-row gap-5 sm:gap-6">
           {/* Close button */}
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 z-30 rounded-full bg-[#1E2230] p-1.5 text-[#9AA2B6] hover:text-white transition-colors"
+            className="absolute top-3 right-3 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-[#1E2230]/90 text-[#9AA2B6] hover:text-white transition-colors cursor-pointer"
+            aria-label="Close preview"
           >
             ✕
           </button>
 
           {/* Left Column: Phone Simulator Viewport */}
-          <div className="flex-1 flex flex-col items-center justify-center">
-            <div className={`relative transition-all duration-300 rounded-2xl overflow-hidden border-2 border-[#2B3040] bg-black shadow-2xl ${aspectRatioClass}`}>
+          <div className="flex-1 flex flex-col items-center justify-center min-w-0">
+            <div className={`relative transition-all duration-300 rounded-2xl overflow-hidden border-2 border-[#2B3040] bg-black shadow-2xl mx-auto ${aspectRatioClass}`}>
               {/* Top overlay metadata badge */}
               <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none">
-                <span className="rounded-md bg-black/70 backdrop-blur-sm px-2 py-0.5 text-[10px] font-black text-[#FF5722] border border-white/10">
+                <span className="rounded-md bg-black/70 backdrop-blur-sm px-2 py-0.5 text-[10px] font-black text-[#10B981] border border-white/10">
                   RANK #{clip.rank} • {clip.score.compositeScore}/100
                 </span>
 
                 {/* Dynamic Scene-Aware Status Badge */}
                 {isFallbackSegment ? (
-                  <div className="flex items-center gap-1 rounded-md bg-[#3B82F6]/90 backdrop-blur-sm px-2 py-0.5 text-[10px] font-bold text-white shadow animate-pulse">
+                  <div className="flex items-center gap-1 rounded-md bg-[#10B981]/90 backdrop-blur-sm px-2 py-0.5 text-[10px] font-bold text-black shadow animate-pulse">
                     <Layers className="h-3 w-3" />
                     <span>Slide / B-Roll (Center Crop)</span>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-1 rounded-md bg-[#10B981]/90 backdrop-blur-sm px-2 py-0.5 text-[10px] font-bold text-white shadow">
+                  <div className="flex items-center gap-1 rounded-md bg-[#10B981]/90 backdrop-blur-sm px-2 py-0.5 text-[10px] font-bold text-black shadow">
                     <ScanFace className="h-3 w-3" />
                     <span>Speaker Tracked (9:16)</span>
                   </div>
@@ -170,7 +171,7 @@ export default function ClipVideoPreview({
                   {Array.from({ length: 12 }).map((_, i) => (
                     <div
                       key={i}
-                      className="w-1.5 bg-[#FF5722] rounded-full transition-all duration-150"
+                      className="w-1.5 bg-[#10B981] rounded-full transition-all duration-150"
                       style={{
                         height: isPlaying ? `${15 + ((i * 19 + Math.round(currentTime * 10)) % 65)}px` : '8px',
                       }}
@@ -189,7 +190,7 @@ export default function ClipVideoPreview({
                             key={idx}
                             className={`transition-all duration-150 font-bold ${
                               isActive
-                                ? 'text-[#FF5722] scale-110 drop-shadow-[0_0_12px_rgba(255,87,34,0.6)] font-extrabold'
+                                ? 'text-[#10B981] scale-110 drop-shadow-[0_0_12px_rgba(16,185,129,0.6)] font-extrabold'
                                 : 'text-white/85'
                             } ${isDevanagari ? 'text-base font-["Noto_Sans_Devanagari"]' : 'text-sm'}`}
                           >
@@ -204,7 +205,7 @@ export default function ClipVideoPreview({
                 {/* Audio progress bar */}
                 <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-white/20">
                   <div
-                    className="h-full bg-[#FF5722] transition-all duration-100"
+                    className="h-full bg-[#10B981] transition-all duration-100"
                     style={{ width: `${(currentTime / (clip.duration || 1)) * 100}%` }}
                   />
                 </div>
@@ -227,41 +228,44 @@ export default function ClipVideoPreview({
                 <label className="text-xs font-semibold text-[#9AA2B6] mb-2 block">
                   Export Aspect Ratio:
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
                   <button
                     onClick={() => setAspectRatio('9:16')}
-                    className={`flex items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-bold transition-all ${
+                    className={`flex items-center justify-center gap-1 sm:gap-1.5 rounded-lg border py-2 px-1 text-xs font-bold transition-all min-h-[38px] ${
                       aspectRatio === '9:16'
-                        ? 'border-[#FF5722] bg-[#FF5722]/15 text-white shadow-sm'
+                        ? 'border-[#10B981] bg-[#10B981]/15 text-white shadow-sm'
                         : 'border-[#2B3040] bg-[#0A0B10] text-[#9AA2B6] hover:text-white'
                     }`}
                   >
-                    <Smartphone className="h-3.5 w-3.5" />
-                    <span>9:16 Reels</span>
+                    <Smartphone className="h-3.5 w-3.5 shrink-0" />
+                    <span>9:16</span>
+                    <span className="hidden sm:inline">Reels</span>
                   </button>
 
                   <button
                     onClick={() => setAspectRatio('1:1')}
-                    className={`flex items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-bold transition-all ${
+                    className={`flex items-center justify-center gap-1 sm:gap-1.5 rounded-lg border py-2 px-1 text-xs font-bold transition-all min-h-[38px] ${
                       aspectRatio === '1:1'
-                        ? 'border-[#FF5722] bg-[#FF5722]/15 text-white shadow-sm'
+                        ? 'border-[#10B981] bg-[#10B981]/15 text-white shadow-sm'
                         : 'border-[#2B3040] bg-[#0A0B10] text-[#9AA2B6] hover:text-white'
                     }`}
                   >
-                    <Square className="h-3.5 w-3.5" />
-                    <span>1:1 Post</span>
+                    <Square className="h-3.5 w-3.5 shrink-0" />
+                    <span>1:1</span>
+                    <span className="hidden sm:inline">Post</span>
                   </button>
 
                   <button
                     onClick={() => setAspectRatio('16:9')}
-                    className={`flex items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-bold transition-all ${
+                    className={`flex items-center justify-center gap-1 sm:gap-1.5 rounded-lg border py-2 px-1 text-xs font-bold transition-all min-h-[38px] ${
                       aspectRatio === '16:9'
-                        ? 'border-[#FF5722] bg-[#FF5722]/15 text-white shadow-sm'
+                        ? 'border-[#10B981] bg-[#10B981]/15 text-white shadow-sm'
                         : 'border-[#2B3040] bg-[#0A0B10] text-[#9AA2B6] hover:text-white'
                     }`}
                   >
-                    <Tv className="h-3.5 w-3.5" />
-                    <span>16:9 Wide</span>
+                    <Tv className="h-3.5 w-3.5 shrink-0" />
+                    <span>16:9</span>
+                    <span className="hidden sm:inline">Wide</span>
                   </button>
                 </div>
               </div>
@@ -279,7 +283,7 @@ export default function ClipVideoPreview({
                     }}
                     className={`flex-1 rounded py-1.5 text-xs font-semibold transition-all ${
                       scriptPreference === 'romanized'
-                        ? 'bg-[#FF5722] text-white shadow'
+                        ? 'bg-[#10B981] text-black font-bold shadow'
                         : 'text-[#9AA2B6] hover:text-white'
                     }`}
                   >
@@ -292,7 +296,7 @@ export default function ClipVideoPreview({
                     }}
                     className={`flex-1 rounded py-1.5 text-xs font-semibold transition-all ${
                       scriptPreference === 'devanagari'
-                        ? 'bg-[#FF5722] text-white shadow'
+                        ? 'bg-[#10B981] text-black font-bold shadow'
                         : 'text-[#9AA2B6] hover:text-white'
                     }`}
                   >
@@ -304,10 +308,10 @@ export default function ClipVideoPreview({
               {/* Gemini Score Reasoning */}
               <div className="mt-5 rounded-xl border border-[#2B3040] bg-[#0A0B10] p-3">
                 <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="font-bold text-[#FFB800]">Gemini Virality Score</span>
+                  <span className="font-bold text-[#10B981]">Gemini Virality Score</span>
                   <span className="font-extrabold text-white">{clip.score.compositeScore}/100</span>
                 </div>
-                <p className="text-xs italic text-[#9AA2B6] border-l border-[#FF5722] pl-2 mt-1">
+                <p className="text-xs italic text-[#9AA2B6] border-l border-[#10B981] pl-2 mt-1">
                   "{clip.score.reasoning}"
                 </p>
               </div>
@@ -325,7 +329,7 @@ export default function ClipVideoPreview({
                 </button>
                 <button
                   onClick={() => setIsPlaying(!isPlaying)}
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-[#FF5722] text-white hover:bg-[#F44336] shadow-lg transition-transform active:scale-95"
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-[#10B981] text-black hover:bg-[#059669] shadow-lg transition-transform active:scale-95"
                 >
                   {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5 ml-0.5" />}
                 </button>
@@ -338,7 +342,7 @@ export default function ClipVideoPreview({
                 <button
                   onClick={handleExportDownload}
                   disabled={isExporting}
-                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#FF5722] py-2.5 text-xs font-bold text-white hover:bg-[#F44336] shadow-md transition-colors disabled:opacity-50"
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#10B981] py-2.5 text-xs font-bold text-black hover:bg-[#059669] shadow-md transition-colors disabled:opacity-50"
                 >
                   {isExporting ? (
                     <>
@@ -347,7 +351,7 @@ export default function ClipVideoPreview({
                     </>
                   ) : (
                     <>
-                      <Download className="h-4 w-4 text-white" />
+                      <Download className="h-4 w-4 text-black" />
                       <span>Download {aspectRatio} MP4 Video</span>
                     </>
                   )}
@@ -355,9 +359,9 @@ export default function ClipVideoPreview({
 
                 <button
                   onClick={() => setSocialCopyOpen(true)}
-                  className="w-full flex items-center justify-center gap-2 rounded-xl border border-[#2B3040] bg-[#0A0B10] py-2.5 text-xs font-bold text-[#FFB800] hover:border-[#FFB800] transition-colors"
+                  className="w-full flex items-center justify-center gap-2 rounded-xl border border-[#2B3040] bg-[#0A0B10] py-2.5 text-xs font-bold text-[#10B981] hover:border-[#10B981] transition-colors"
                 >
-                  <Share2 className="h-3.5 w-3.5 text-[#FFB800]" />
+                  <Share2 className="h-3.5 w-3.5 text-[#10B981]" />
                   <span>Generate Viral Social Copy</span>
                 </button>
               </div>

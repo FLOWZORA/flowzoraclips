@@ -14,12 +14,20 @@
   --color-ink-faint: #a1a1a1;
   --color-ink-mute: #707070;
   
-  --color-saffron: #ff5722;
-  --color-saffron-hover: #f44336;
-  --color-gold: #ffb800;
+  --color-saffron: #10b981;
+  --color-saffron-hover: #059669;
+  --color-gold: #10b981;
+  --color-emerald: #10b981;
+  --color-emerald-hover: #059669;
 }
 
 @layer base {
+  html {
+    max-width: 100vw;
+    overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     background-color: #000000;
     color: #ededed;
@@ -27,7 +35,9 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     min-height: 100vh;
+    max-width: 100vw;
     overflow-x: hidden;
+    position: relative;
   }
 
   /* Support clean Devanagari ligature rendering */
@@ -37,9 +47,9 @@
   }
 }
 
-/* Vercel Mesh Gradient Effect */
+/* Ambient Mesh Gradient Effect */
 .mesh-gradient-glow {
-  background: radial-gradient(circle at 50% 30%, rgba(255, 87, 34, 0.14), rgba(255, 184, 0, 0.08) 28%, rgba(121, 40, 202, 0.06) 52%, transparent 72%);
+  background: radial-gradient(circle at 50% 30%, rgba(16, 185, 129, 0.14), rgba(5, 150, 105, 0.08) 28%, rgba(52, 211, 153, 0.04) 52%, transparent 72%);
 }
 
 .geist-hairline-card {

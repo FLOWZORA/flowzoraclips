@@ -1,8 +1,16 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { GeistSans } from 'geist/font/sans';
 import { GeistMono } from 'geist/font/mono';
 import { Noto_Sans_Devanagari } from 'next/font/google';
+import GlobalAmbientBackground from '@/components/GlobalAmbientBackground';
 import './globals.css';
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: '#000000',
+};
 
 const notoSansDevanagari = Noto_Sans_Devanagari({
   subsets: ['devanagari'],
@@ -59,8 +67,9 @@ export default function RootLayout({
       lang="en"
       className={`scroll-smooth ${GeistSans.variable} ${GeistMono.variable} ${notoSansDevanagari.variable}`}
     >
-      <body className="bg-[#000000] text-[#EDEDED] font-sans antialiased selection:bg-[#FF5722]/30 selection:text-[#FF5722]">
-        <div className="flex min-h-screen flex-col">{children}</div>
+      <body className="bg-[#000000] text-[#EDEDED] font-sans antialiased selection:bg-[#10B981]/30 selection:text-[#10B981] relative min-h-screen">
+        <GlobalAmbientBackground />
+        <div className="relative z-10 flex min-h-screen flex-col">{children}</div>
       </body>
     </html>
   );

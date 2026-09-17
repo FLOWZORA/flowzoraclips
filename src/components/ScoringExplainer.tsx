@@ -2,7 +2,7 @@ import React from 'react';
 
 export default function ScoringExplainer() {
   return (
-    <section id="scoring" className="border-t border-[#262626] bg-[#000000] py-16 sm:py-24">
+    <section id="scoring" className="relative border-t border-[#262626] bg-[#000000]/40 backdrop-blur-[2px] py-16 sm:py-24">
       <div className="mx-auto max-w-5xl px-4 sm:px-6">
         <div className="max-w-2xl">
           <div className="font-mono text-xs uppercase tracking-wider text-[#A1A1A1] mb-2">
@@ -21,7 +21,7 @@ export default function ScoringExplainer() {
           <div className="rounded-xl border border-[#262626] bg-[#0A0A0A] p-6 hover:border-[#383838] transition-colors">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-white">1. Hook Strength</h3>
-              <span className="font-mono rounded-[4px] bg-[#FF5722]/10 border border-[#FF5722]/20 px-2 py-0.5 text-xs font-semibold text-[#FF5722] tabular-nums">
+              <span className="font-mono rounded-[4px] bg-[#10B981]/10 border border-[#10B981]/20 px-2 py-0.5 text-xs font-semibold text-[#10B981] tabular-nums">
                 0 – 10
               </span>
             </div>
@@ -33,7 +33,7 @@ export default function ScoringExplainer() {
           <div className="rounded-xl border border-[#262626] bg-[#0A0A0A] p-6 hover:border-[#383838] transition-colors">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-white">2. Standalone Coherence</h3>
-              <span className="font-mono rounded-[4px] bg-[#FFB800]/10 border border-[#FFB800]/20 px-2 py-0.5 text-xs font-semibold text-[#FFB800] tabular-nums">
+              <span className="font-mono rounded-[4px] bg-[#10B981]/10 border border-[#10B981]/20 px-2 py-0.5 text-xs font-semibold text-[#10B981] tabular-nums">
                 0 – 10
               </span>
             </div>
@@ -45,7 +45,7 @@ export default function ScoringExplainer() {
           <div className="rounded-xl border border-[#262626] bg-[#0A0A0A] p-6 hover:border-[#383838] transition-colors">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-white">3. Emotional Payoff</h3>
-              <span className="font-mono rounded-[4px] bg-[#3B82F6]/10 border border-[#3B82F6]/20 px-2 py-0.5 text-xs font-semibold text-[#3B82F6] tabular-nums">
+              <span className="font-mono rounded-[4px] bg-[#10B981]/10 border border-[#10B981]/20 px-2 py-0.5 text-xs font-semibold text-[#10B981] tabular-nums">
                 0 – 10
               </span>
             </div>

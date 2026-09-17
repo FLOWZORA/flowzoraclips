@@ -17,7 +17,7 @@ export interface CaptionLine {
 export interface ASSSubtitleConfig {
   scriptPreference: ScriptPreference;
   fontSize?: number;
-  highlightColorHex?: string; // e.g. '#FF5722' or '#FFB800'
+  highlightColorHex?: string; // e.g. '#10B981'
   textColorHex?: string;      // e.g. '#FFFFFF'
   outlineColorHex?: string;    // e.g. '#0A0B10'
   videoWidth?: number;
@@ -106,7 +106,7 @@ export function generateAssSubtitles(
   const {
     scriptPreference,
     fontSize = 54,
-    highlightColorHex = '#FF5722',
+    highlightColorHex = '#10B981',
     textColorHex = '#FFFFFF',
     outlineColorHex = '#0A0B10',
     videoWidth = 1080,
