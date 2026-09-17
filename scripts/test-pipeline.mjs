@@ -12,6 +12,8 @@
  * 6. Contrast against Clipzi-style naive fixed 60s chunking
  */
 
+import fs from 'fs';
+import path from 'path';
 import { runTextPipeline } from '../src/lib/pipeline/pipeline-orchestrator.ts';
 
 async function main() {
@@ -20,8 +22,12 @@ async function main() {
   console.log('================================================================\n');
 
   const startTime = Date.now();
+  const samplePath = path.resolve(process.cwd(), 'public/media/podcast-sample.mp4');
+  const audioBuffer = fs.readFileSync(samplePath);
 
   const result = await runTextPipeline({
+    audioBuffer,
+    filename: 'podcast-sample.mp4',
     language: 'hinglish',
     scriptPreference: 'romanized',
     qualityThreshold: 72,

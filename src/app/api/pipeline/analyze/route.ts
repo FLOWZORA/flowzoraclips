@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { runTextPipeline } from '@/lib/pipeline/pipeline-orchestrator';
 import { SourceLanguage, ScriptPreference } from '@/lib/pipeline/types';
 import { validateProcessingEligibility, deductCredit, refundCreditOnFailure } from '@/lib/billing/credits';
-import { checkSpendKillSwitch, recordApiSpend, checkRateLimit } from '@/lib/billing/kill-switch';
+import { checkSpendKillSwitch, recordApiSpend } from '@/lib/billing/kill-switch';
+import { extractAudioBuffer, isVideoFile } from '@/lib/pipeline/audio-extractor';
 
 export async function POST(req: NextRequest) {
   let activeUserId = 'demo-user-1';
@@ -10,20 +11,6 @@ export async function POST(req: NextRequest) {
   let creditDeducted = false;
 
   try {
-    // 1. Rate limit check by client IP
-    const forwardedFor = req.headers.get('x-forwarded-for');
-    const clientIp = forwardedFor ? forwardedFor.split(',')[0].trim() : '127.0.0.1';
-    const rateLimit = checkRateLimit(clientIp);
-
-    if (!rateLimit.allowed) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Hourly rate limit reached (5 analyses / hour). Please wait a bit or upgrade your account.',
-        },
-        { status: 429 }
-      );
-    }
 
     // 2. Spend kill switch check
     const spendStatus = await checkSpendKillSwitch();
@@ -45,9 +32,32 @@ export async function POST(req: NextRequest) {
 
       if (file) {
         const arrayBuf = await file.arrayBuffer();
-        audioBuffer = Buffer.from(arrayBuf);
+        let rawBuffer = Buffer.from(arrayBuf);
         filename = file.name;
-        // Approximation: ~1MB mp3 is roughly 1 min (60s)
+
+        // If this is a video file, extract the audio-only stream first.
+        // This compresses a 100+ MB MP4 to a ~3 MB MP3 so it fits Groq's 25 MB limit.
+        if (isVideoFile(filename)) {
+          console.log(`[API] Video file detected (${(rawBuffer.length / 1048576).toFixed(1)} MB). Extracting audio stream...`);
+          try {
+            const extracted = await extractAudioBuffer(rawBuffer, filename);
+            audioBuffer = extracted.audioBuffer;
+            filename = extracted.audioFilename;
+            console.log(`[API] Audio extracted: ${(audioBuffer.length / 1048576).toFixed(1)} MB MP3`);
+          } catch (extractErr: any) {
+            console.error('[API] Audio extraction failed:', extractErr.message);
+            // Surface the error to the user instead of falling back silently
+            return NextResponse.json(
+              { success: false, error: `Audio extraction failed: ${extractErr.message}` },
+              { status: 422 }
+            );
+          }
+        } else {
+          audioBuffer = rawBuffer;
+        }
+
+        // Estimate duration: MP3 at 64kbps is ~0.5 MB/min; raw video ~10-50 MB/min
+        // Use 1 MB/min as a safe lower bound
         estimatedDurationSec = Math.max(30, Math.min(3600, Math.round((file.size / (1024 * 1024)) * 60)));
       }
     } else {
@@ -56,6 +66,17 @@ export async function POST(req: NextRequest) {
       scriptPreference = body.scriptPreference || 'romanized';
       if (body.userId) activeUserId = body.userId;
       if (body.durationSec) estimatedDurationSec = Number(body.durationSec);
+    }
+
+    // Ensure audio data is provided — no silent fallback to sample subtitles
+    if (!audioBuffer || audioBuffer.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'No video or audio file was provided. Please upload a media file to extract highlights and subtitles.',
+        },
+        { status: 400 }
+      );
     }
 
     // 3. If kill switch tripped and user is on free tier, pause new free jobs

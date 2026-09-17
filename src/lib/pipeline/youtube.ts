@@ -123,17 +123,53 @@ export async function extractYouTubeAudioStream(
 
   console.log(`[YouTube Ingest] Extracting audio for "${metadata.title}" (${metadata.videoId})...`);
 
-  // In production with yt-dlp or Railway worker, yt-dlp streams the audio stream:
-  // yt-dlp -f "ba" -x --audio-format mp3 -o - <url>
-  // In development, create a clean sample podcast audio buffer
-  const sampleAudioBuffer = Buffer.from(
-    'ID3\x03\x00\x00\x00\x00\x00\x23TIT2\x00\x00\x00\x15\x00\x00\x03FLOWZORA Podcast Sample' +
-    '\x00'.repeat(1024 * 32)
-  );
+  // Real audio extraction using yt-dlp
+  try {
+    const fs = await import('fs');
+    const path = await import('path');
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
 
-  return {
-    audioBuffer: sampleAudioBuffer,
-    filename: `youtube_${metadata.videoId}.mp3`,
-    metadata,
-  };
+    const tempDir = path.resolve(process.cwd(), 'scratch');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const outPrefix = path.join(tempDir, `yt_${metadata.videoId}_${Date.now()}`);
+    const scriptPath = path.resolve(process.cwd(), 'scripts', 'extract-yt-audio.py');
+    const metaPath = `${outPrefix}.meta.json`;
+
+    await execFileAsync('python', [scriptPath, url, outPrefix], {
+      timeout: 45000,
+    });
+
+    if (fs.existsSync(metaPath)) {
+      const parsed = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+      try { fs.unlinkSync(metaPath); } catch (_) {}
+
+      if (parsed.success && parsed.filePath && fs.existsSync(parsed.filePath)) {
+        const audioBuffer = fs.readFileSync(parsed.filePath);
+        const ext = path.extname(parsed.filePath) || '.m4a';
+        try { fs.unlinkSync(parsed.filePath); } catch (_) {}
+
+        console.log(`[YouTube Ingest] Successfully extracted ${audioBuffer.length} bytes of real audio for "${metadata.title}"`);
+        return {
+          audioBuffer,
+          filename: `youtube_${metadata.videoId}${ext}`,
+          metadata,
+        };
+      }
+    }
+  } catch (err: any) {
+    console.error(`[YouTube Ingest] Real audio extraction via yt-dlp failed: ${err.message}`);
+    throw new Error(
+      `Failed to extract audio from YouTube URL: ${err.message}. ` +
+      `Please ensure Python and yt-dlp are installed, or download the video and upload it directly.`
+    );
+  }
+
+  throw new Error(
+    `Failed to extract audio for YouTube video (${metadata.videoId}). Please check the URL or upload the file directly.`
+  );
 }

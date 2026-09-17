@@ -53,7 +53,8 @@ export function buildVideoRenderJob(
     outputFilename = `${clipId}_${aspectRatio.replace(':', 'x')}.mp4`,
   } = request;
 
-  const duration = Number((endTime - startTime).toFixed(2));
+  const duration = Number(Math.min(35, endTime - startTime).toFixed(2));
+  const safeEndTime = Number((startTime + duration).toFixed(2));
 
   // 1. Calculate scene-aware crop and reframe
   const reframe = calculateSceneAwareReframe(trackingPoints, aspectRatio, 1920, 1080);

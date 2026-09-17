@@ -28,7 +28,7 @@ const steps: Step[] = [
     details: [
       'Accepts YouTube links, podcast recordings, Zoom interviews, and studio cameras',
       'Select preferred audio language: Hindi, Hinglish (code-switched), English, or Auto-detect',
-      'Choose caption script output: Native Devanagari (देवनागरी) or clean Romanized Latin script',
+      'Choose caption script output: English, Romanized Hindi, or Native Devanagari (देवनागरी)',
     ],
     techPill: 'Cloudflare R2 • Presigned S3 API • yt-dlp Worker',
   },

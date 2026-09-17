@@ -1,5 +1,5 @@
 export type SourceLanguage = 'hindi' | 'hinglish' | 'english' | 'auto';
-export type ScriptPreference = 'devanagari' | 'romanized';
+export type ScriptPreference = 'devanagari' | 'romanized' | 'english';
 export type AspectRatio = '9:16' | '1:1' | '16:9';
 
 export type JobStage =
@@ -19,6 +19,7 @@ export interface WordTimestamp {
   end: number;   // in seconds
   speaker?: string;
   isFiller?: boolean;
+  devanagari?: string;
 }
 
 export interface TranscriptSegment {

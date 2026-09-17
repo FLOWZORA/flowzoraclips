@@ -66,7 +66,7 @@ export default function HindiBenchmarkCallout() {
               <li className="flex items-start gap-2.5">
                 <span className="text-[#10B981] font-mono font-bold">✓</span>
                 <span>
-                  <strong className="text-white">Dual-script choice:</strong> Choose between native Devanagari (देवनागरी) or Romanized Latin Hinglish captions, with full ligature and typography support.
+                  <strong className="text-white">Multi-script choice:</strong> Choose between English, Romanized Hindi, or native Devanagari (देवनागरी) captions, with full ligature and typography support.
                 </span>
               </li>
             </ul>

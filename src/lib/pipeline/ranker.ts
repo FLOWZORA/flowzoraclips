@@ -77,18 +77,34 @@ export function dedupeAndRankCandidates(
   }
 
   // Convert to CandidateClip format with 1-based ranks
-  const rankedClips: CandidateClip[] = accepted.map((item, idx) => ({
-    id: `ranked-clip-${idx + 1}`,
-    videoId: 'current-session',
-    startTime: item.window.startTime,
-    endTime: item.window.endTime,
-    duration: item.window.duration,
-    transcriptSnippet: item.window.text,
-    score: item.score,
-    rank: idx + 1,
-    aspectRatio: '9:16',
-    reframeFallbackUsed: false,
-  }));
+  // Enforces hard ceiling: no clip generated can be more than 35 seconds long
+  const MAX_ALLOWED_CLIP_DUR = 35;
+  const rankedClips: CandidateClip[] = accepted.map((item, idx) => {
+    const start = item.window.startTime;
+    let end = item.window.endTime;
+    let dur = item.window.duration;
+
+    if (dur > MAX_ALLOWED_CLIP_DUR || (end - start) > MAX_ALLOWED_CLIP_DUR) {
+      end = Number((start + MAX_ALLOWED_CLIP_DUR).toFixed(2));
+      dur = MAX_ALLOWED_CLIP_DUR;
+    }
+
+    const words = item.window.words ? item.window.words.filter((w) => w.end <= end + 0.05) : [];
+
+    return {
+      id: `ranked-clip-${idx + 1}`,
+      videoId: 'current-session',
+      startTime: start,
+      endTime: end,
+      duration: Number(dur.toFixed(2)),
+      transcriptSnippet: item.window.text,
+      score: item.score,
+      rank: idx + 1,
+      aspectRatio: '9:16',
+      reframeFallbackUsed: false,
+      words: words.length > 0 ? words : item.window.words,
+    };
+  });
 
   // Generate Naive Fixed-Interval Chunking (Clipzi's limitation) for direct comparison
   const naiveClips = generateNaiveFixedIntervalChunks(candidates, totalDuration);
@@ -115,14 +131,14 @@ function calculateTemporalOverlap(a: CandidateWindow, b: CandidateWindow): numbe
 }
 
 /**
- * Simulates naive fixed-interval 60s chunking (used by Clipzi and primitive tools)
+ * Simulates naive fixed-interval 30s chunking (used by Clipzi and primitive tools)
  * to demonstrate how fixed time slicing cuts sentences mid-word.
  */
 function generateNaiveFixedIntervalChunks(
   candidates: CandidateWindow[],
   totalDuration: number
 ) {
-  const fixedIntervalSec = 60;
+  const fixedIntervalSec = 30;
   const chunks: Array<{
     id: string;
     startTime: number;

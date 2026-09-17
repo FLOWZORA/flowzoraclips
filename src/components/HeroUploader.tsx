@@ -17,7 +17,7 @@ import {
   ChevronDown,
   X,
 } from 'lucide-react';
-import { CandidateClip } from '@/lib/pipeline/types';
+import { CandidateClip, AspectRatio, ScriptPreference } from '@/lib/pipeline/types';
 import ClipVideoPreview from '@/components/ClipVideoPreview';
 // import CheckoutButton from '@/components/CheckoutButton';
 import AuthModal from '@/components/AuthModal';
@@ -34,8 +34,26 @@ interface NaiveClip {
 export default function HeroUploader() {
   const [activeTab, setActiveTab] = useState<'upload' | 'url'>('upload');
   const [language, setLanguage] = useState<'hinglish' | 'hindi' | 'english' | 'auto'>('hinglish');
-  const [scriptPreference, setScriptPreference] = useState<'romanized' | 'devanagari'>('romanized');
+  const [scriptPreference, setScriptPreference] = useState<ScriptPreference>('romanized');
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>('9:16');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [sourceMediaUrl, setSourceMediaUrl] = useState<string>('/media/podcast-sample.mp4');
+  const [sourceMediaType, setSourceMediaType] = useState<'video' | 'audio'>('video');
+
+  React.useEffect(() => {
+    if (selectedFile) {
+      const url = URL.createObjectURL(selectedFile);
+      setSourceMediaUrl(url);
+      setSourceMediaType(selectedFile.type.startsWith('video') ? 'video' : 'audio');
+      return () => {
+        URL.revokeObjectURL(url);
+      };
+    } else {
+      setSourceMediaUrl('/media/podcast-sample.mp4');
+      setSourceMediaType('video');
+    }
+  }, [selectedFile]);
+
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [youtubeUrl, setYoutubeUrl] = useState('');
@@ -156,7 +174,26 @@ export default function HeroUploader() {
 
         if (json.data) {
           const d = json.data;
-          setRankedClips(d.rankedResult.rankedClips || []);
+          if (json.metadata?.videoId) {
+            setSourceMediaUrl(`https://www.youtube.com/watch?v=${json.metadata.videoId}`);
+            setSourceMediaType('video');
+          } else if (youtubeUrl) {
+            setSourceMediaUrl(youtubeUrl.trim());
+            setSourceMediaType('video');
+          }
+
+          const sanitizeClips = (clips: CandidateClip[]) =>
+            (clips || []).map((c) => {
+              const dur = Math.min(35, c.duration || (c.endTime - c.startTime));
+              const safeEnd = Number((c.startTime + dur).toFixed(1));
+              return {
+                ...c,
+                duration: Number(dur.toFixed(1)),
+                endTime: safeEnd,
+              };
+            });
+
+          setRankedClips(sanitizeClips(d.rankedResult.rankedClips || []));
           setNaiveClips(d.rankedResult.comparisonWithNaiveChunking?.naiveClips || []);
           setStats({
             duration: d.duration,
@@ -174,63 +211,34 @@ export default function HeroUploader() {
       }
 
       // -------------------------------------------------------------
-      // CASE 2: Direct File Upload to Cloudflare R2
+      // CASE 2: Cloud Storage Archive (Graceful / Non-Blocking)
       // -------------------------------------------------------------
       if (selectedFile) {
-        setStatusMessage('Requesting Cloudflare R2 presigned upload URL...');
-
-        const presignRes = await fetch('/api/upload/presigned-url', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filename: selectedFile.name,
-            contentType: selectedFile.type || 'video/mp4',
-            fileSize: selectedFile.size,
-            userId: activeUserId,
-          }),
-        });
-
-        const presignData = await presignRes.json();
-        if (!presignRes.ok || !presignData.success) {
-          setErrorMessage(presignData.error || 'Upload request was denied.');
-          if (presignData.error?.includes('10 minutes') || presignData.error?.includes('credits')) {
-            setRequiresTopup(true);
+        try {
+          const presignRes = await fetch('/api/upload/presigned-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              filename: selectedFile.name,
+              contentType: selectedFile.type || 'video/mp4',
+              fileSize: selectedFile.size,
+              userId: activeUserId,
+            }),
+          });
+          const presignData = await presignRes.json();
+          if (presignData?.success && presignData.uploadUrl) {
+            await new Promise<void>((resolve) => {
+              const xhr = new XMLHttpRequest();
+              xhr.open('PUT', presignData.uploadUrl);
+              xhr.setRequestHeader('Content-Type', selectedFile.type || 'video/mp4');
+              xhr.onload = () => resolve();
+              xhr.onerror = () => resolve();
+              xhr.send(selectedFile);
+            });
           }
-          return;
+        } catch (_) {
+          // Cloud storage archive is optional; proceed directly to live AI analysis
         }
-
-        setStatusMessage(`Direct streaming to R2 (${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)...`);
-
-        // Upload directly to Cloudflare R2 via presigned PUT URL
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('PUT', presignData.uploadUrl);
-          xhr.setRequestHeader('Content-Type', selectedFile.type || 'video/mp4');
-
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) {
-              const percent = Math.round((e.loaded / e.total) * 100);
-              setUploadProgress(percent);
-            }
-          };
-
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              setUploadProgress(100);
-              resolve();
-            } else {
-              reject(new Error(`Storage upload failed with status ${xhr.status}. Check R2 bucket permissions.`));
-            }
-          };
-
-          xhr.onerror = () =>
-            reject(
-              new Error(
-                'Direct upload blocked by Cloudflare R2 CORS. Please add the CORS policy to your R2 bucket "flowzoraclips" in Cloudflare Dashboard, or use the YouTube URL tab for instant server-side processing.'
-              )
-            );
-          xhr.send(selectedFile);
-        });
       }
 
       // -------------------------------------------------------------
@@ -241,16 +249,20 @@ export default function HeroUploader() {
       setTimeout(() => setStatusMessage('Snapping windows to semantic sentence boundaries...'), 700);
       setTimeout(() => setStatusMessage('Evaluating Hook, Coherence, Emotion & Trend via Gemini 2.5 Flash...'), 1100);
 
+      if (!selectedFile) {
+        setErrorMessage('Please select a video or audio file to upload before extracting clips.');
+        setIsProcessing(false);
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('language', language);
+      formData.append('scriptPreference', scriptPreference);
+      formData.append('userId', activeUserId);
       const res = await fetch('/api/pipeline/analyze', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          language,
-          scriptPreference,
-          userId: activeUserId,
-        }),
+        body: formData,
       });
 
       const json = await res.json();
@@ -268,7 +280,18 @@ export default function HeroUploader() {
 
       if (json.success && json.data) {
         const d = json.data;
-        setRankedClips(d.rankedResult.rankedClips || []);
+        const sanitizeClips = (clips: CandidateClip[]) =>
+          (clips || []).map((c) => {
+            const dur = Math.min(35, c.duration || (c.endTime - c.startTime));
+            const safeEnd = Number((c.startTime + dur).toFixed(1));
+            return {
+              ...c,
+              duration: Number(dur.toFixed(1)),
+              endTime: safeEnd,
+            };
+          });
+
+        setRankedClips(sanitizeClips(d.rankedResult.rankedClips || []));
         setNaiveClips(d.rankedResult.comparisonWithNaiveChunking?.naiveClips || []);
         setStats({
           duration: d.duration,
@@ -296,8 +319,18 @@ export default function HeroUploader() {
     setRankedClips((prev) =>
       prev.map((c) => {
         if (c.id === clipId) {
-          const newStart = type === 'start' ? Math.max(0, c.startTime + deltaSec) : c.startTime;
-          const newEnd = type === 'end' ? c.endTime + deltaSec : c.endTime;
+          let newStart = type === 'start' ? Math.max(0, c.startTime + deltaSec) : c.startTime;
+          let newEnd = type === 'end' ? c.endTime + deltaSec : c.endTime;
+          // Guard minimum clip length of 3s
+          if (newEnd - newStart < 3) return c;
+          // Strict hard ceiling: no clip can be more than 35 seconds long
+          if (newEnd - newStart > 35) {
+            if (type === 'end') {
+              newEnd = newStart + 35;
+            } else {
+              newStart = newEnd - 35;
+            }
+          }
           return {
             ...c,
             startTime: Number(newStart.toFixed(1)),
@@ -344,17 +377,17 @@ export default function HeroUploader() {
             </button>
           </div>
 
-          {/* Language & Script Selector Dropdowns */}
-          <div className="flex flex-col xs:flex-row items-stretch xs:items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
-            <div className="flex items-center gap-2 flex-1 sm:flex-initial">
-              <label className="text-xs font-mono text-[#A1A1A1] shrink-0">AUDIO:</label>
+          {/* Language, Script & Aspect Ratio Selector Dropdowns */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2.5 w-full lg:w-auto">
+            <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
+              <label className="text-[11px] font-mono text-[#A1A1A1] shrink-0">AUDIO:</label>
               <div className="relative flex-1">
                 <select
                   value={language}
                   onChange={(e) => setLanguage(e.target.value as any)}
-                  className="w-full appearance-none rounded-md border border-[#262626] bg-[#111111] pl-2.5 pr-8 py-1.5 text-xs text-[#EDEDED] focus:outline-none focus:border-[#555555] transition-colors cursor-pointer min-h-[36px]"
+                  className="w-full appearance-none rounded-md border border-[#262626] bg-[#111111] pl-2.5 pr-7 py-1.5 text-xs text-[#EDEDED] focus:outline-none focus:border-[#555555] transition-colors cursor-pointer min-h-[34px]"
                 >
-                  <option value="hinglish" className="bg-[#111111] text-[#EDEDED]">Hinglish (Hindi + English)</option>
+                  <option value="hinglish" className="bg-[#111111] text-[#EDEDED]">Hinglish</option>
                   <option value="hindi" className="bg-[#111111] text-[#EDEDED]">Hindi (हिन्दी)</option>
                   <option value="english" className="bg-[#111111] text-[#EDEDED]">English</option>
                   <option value="auto" className="bg-[#111111] text-[#EDEDED]">Auto-detect</option>
@@ -363,16 +396,33 @@ export default function HeroUploader() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 flex-1 sm:flex-initial">
-              <label className="text-xs font-mono text-[#A1A1A1] shrink-0">CAPTIONS:</label>
+            <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
+              <label className="text-[11px] font-mono text-[#A1A1A1] shrink-0">CAPTIONS:</label>
               <div className="relative flex-1">
                 <select
                   value={scriptPreference}
-                  onChange={(e) => setScriptPreference(e.target.value as any)}
-                  className="w-full appearance-none rounded-md border border-[#262626] bg-[#111111] pl-2.5 pr-8 py-1.5 text-xs text-[#EDEDED] focus:outline-none focus:border-[#555555] transition-colors cursor-pointer min-h-[36px]"
+                  onChange={(e) => setScriptPreference(e.target.value as ScriptPreference)}
+                  className="w-full appearance-none rounded-md border border-[#262626] bg-[#111111] pl-2.5 pr-7 py-1.5 text-xs text-[#EDEDED] focus:outline-none focus:border-[#555555] transition-colors cursor-pointer min-h-[34px]"
                 >
-                  <option value="romanized" className="bg-[#111111] text-[#EDEDED]">Romanized (Latin)</option>
-                  <option value="devanagari" className="bg-[#111111] text-[#EDEDED]">Devanagari (देवनागरी)</option>
+                  <option value="romanized" className="bg-[#111111] text-[#EDEDED]">Romanized Hindi</option>
+                  <option value="english" className="bg-[#111111] text-[#EDEDED]">English</option>
+                  <option value="devanagari" className="bg-[#111111] text-[#EDEDED]">देवनागरी (Devanagari)</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#A1A1A1]" />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
+              <label className="text-[11px] font-mono text-[#A1A1A1] shrink-0">RATIO:</label>
+              <div className="relative flex-1">
+                <select
+                  value={aspectRatio}
+                  onChange={(e) => setAspectRatio(e.target.value as AspectRatio)}
+                  className="w-full appearance-none rounded-md border border-[#262626] bg-[#111111] pl-2.5 pr-7 py-1.5 text-xs text-[#EDEDED] focus:outline-none focus:border-[#555555] transition-colors cursor-pointer min-h-[34px]"
+                >
+                  <option value="9:16" className="bg-[#111111] text-[#EDEDED]">9:16 (Reels / TikTok / Shorts)</option>
+                  <option value="1:1" className="bg-[#111111] text-[#EDEDED]">1:1 (Square Post)</option>
+                  <option value="16:9" className="bg-[#111111] text-[#EDEDED]">16:9 (Landscape)</option>
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#A1A1A1]" />
               </div>
@@ -795,7 +845,7 @@ export default function HeroUploader() {
                             className="flex-1 flex items-center justify-center gap-1.5 rounded-md bg-white py-2 text-xs font-semibold text-black hover:bg-[#E5E5E5] transition-colors shadow-sm cursor-pointer min-h-[38px]"
                           >
                             <Play className="h-3 w-3 fill-black" />
-                            <span>Preview 9:16</span>
+                            <span>Preview Studio ({aspectRatio})</span>
                           </button>
                           <button
                             type="button"
@@ -807,10 +857,10 @@ export default function HeroUploader() {
                             <span className="hidden xs:inline">Social</span>
                           </button>
                           <a
-                            href={`/api/export/render?clipId=${clip.id}&download=true&format=9:16`}
-                            download={`flowzora_${clip.id}.mp4`}
+                            href={`/api/export/render?clipId=${clip.id}&download=true&format=${aspectRatio}&startTime=${clip.startTime}&endTime=${clip.endTime}`}
+                            download={`flowzora_${clip.id}_${aspectRatio.replace(':', 'x')}.mp4`}
                             className="flex items-center justify-center gap-1 rounded-md border border-[#262626] bg-[#111111] px-3 py-2 text-xs font-medium text-[#EDEDED] hover:border-[#383838] transition-colors min-h-[38px]"
-                            title="Download 9:16 MP4"
+                            title={`Download ${aspectRatio} MP4`}
                           >
                             <Download className="h-3.5 w-3.5" />
                             <span className="hidden xs:inline">Export</span>
@@ -839,21 +889,23 @@ export default function HeroUploader() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                  {naiveClips.map((chunk) => (
+                  {naiveClips.map((nc) => (
                     <div
-                      key={chunk.id}
-                      className="rounded-lg border border-[#262626] bg-[#0A0A0A] p-3 text-xs opacity-80 font-mono"
+                      key={nc.id}
+                      className="rounded-lg border border-[#EF4444]/20 bg-[#110505] p-3 text-xs opacity-75"
                     >
-                      <div className="flex items-center justify-between text-[#EF4444] font-semibold text-[11px] mb-1">
-                        <span>{chunk.id}</span>
-                        <span className="tabular-nums">{chunk.startTime}s – {chunk.endTime}s</span>
+                      <div className="flex items-center justify-between text-[11px] font-mono text-[#EF4444] mb-1">
+                        <span>Fixed 60s Chunk</span>
+                        <span>{nc.startTime}s – {nc.endTime}s</span>
                       </div>
-                      <p className="text-[#A1A1A1] font-sans line-clamp-2 italic">
-                        “{chunk.textSnippet}”
+                      <p className="text-[#A1A1A1] line-clamp-3 italic">
+                        "{nc.textSnippet}"
                       </p>
-                      <div className="mt-2 text-[10px] text-[#EF4444] flex items-center gap-1">
-                        <span>✕ Truncated mid-sentence</span>
-                      </div>
+                      {nc.cutMidSentence && (
+                        <div className="mt-2 text-[10px] text-[#EF4444] flex items-center gap-1 font-semibold">
+                          <span>⚠ Chops mid-sentence</span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -863,13 +915,16 @@ export default function HeroUploader() {
         )}
       </div>
 
-      {/* Interactive 9:16 Video & Animated Caption Preview Modal */}
+      {/* Interactive Video & Animated Caption Preview Modal */}
       {previewClip && (
         <ClipVideoPreview
           clip={previewClip}
           scriptPreference={scriptPreference}
+          initialAspectRatio={aspectRatio}
           onScriptChange={(s) => setScriptPreference(s)}
           onClose={() => setPreviewClip(null)}
+          sourceMediaUrl={sourceMediaUrl}
+          sourceMediaType={sourceMediaType}
         />
       )}
 

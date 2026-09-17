@@ -1,0 +1,44 @@
+import path from 'path';
+import os from 'os';
+import fs from 'fs';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
+
+export async function extractAudioBuffer(
+  inputBuffer: Buffer | Uint8Array,
+  inputFilename: string
+): Promise<{ audioBuffer: Buffer; audioFilename: string }> {
+  let ffmpegPath: string;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const installer = require('@ffmpeg-installer/ffmpeg');
+    ffmpegPath = installer.path;
+  } catch (e) {
+    throw new Error('FFmpeg not available.');
+  }
+  const tmpDir = os.tmpdir();
+  const uid = 'flowzora_' + Date.now();
+  const ext = path.extname(inputFilename).toLowerCase() || '.mp4';
+  const inPath = path.join(tmpDir, uid + '_in' + ext);
+  const outPath = path.join(tmpDir, uid + '_out.mp3');
+  try {
+    fs.writeFileSync(inPath, inputBuffer as Buffer);
+    const mb = (inputBuffer.length / 1048576).toFixed(1);
+    console.log('[AudioExtractor] ' + mb + ' MB video extraction started');
+    await execFileAsync(ffmpegPath, ['-y','-i',inPath,'-vn','-acodec','libmp3lame','-ab','64k','-ac','1','-ar','16000',outPath]);
+    const audioBuffer = fs.readFileSync(outPath);
+    const mb2 = (audioBuffer.length / 1048576).toFixed(1);
+    console.log('[AudioExtractor] Done: ' + mb2 + ' MB MP3');
+    return { audioBuffer, audioFilename: uid + '_out.mp3' };
+  } finally {
+    try { fs.unlinkSync(inPath); } catch (_) {}
+    try { fs.unlinkSync(outPath); } catch (_) {}
+  }
+}
+
+export function isVideoFile(filename: string): boolean {
+  const ext = path.extname(filename).toLowerCase();
+  return ['.mp4','.mov','.avi','.mkv','.webm','.m4v','.wmv','.flv'].includes(ext);
+}

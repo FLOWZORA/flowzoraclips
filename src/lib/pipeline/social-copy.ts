@@ -72,7 +72,9 @@ export async function generateSocialCopy(req: SocialCopyRequest): Promise<Social
       const scriptDirective =
         scriptPref === 'devanagari'
           ? 'Write the title, hook, and caption in natural, engaging Hindi using Devanagari script (देवनागरी).'
-          : 'Write the title, hook, and caption in natural, conversational Hinglish (Hindi written in Romanized Latin script with English keywords, as popular Indian creators like Tanmay Bhat, Nikhil Kamath, or Ranveer Allahbadia speak).';
+          : scriptPref === 'english'
+          ? 'Write the title, hook, and caption in crisp, punchy, high-converting English.'
+          : 'Write the title, hook, and caption in natural, conversational Romanized Hindi (Hinglish: Hindi written in Romanized Latin script with English keywords, as popular Indian creators like Tanmay Bhat, Nikhil Kamath, or Ranveer Allahbadia speak).';
 
       const prompt = `You are an elite short-form social media strategist for top Indian podcasters and creators.
 Generate viral titles, captions, and hashtags for the following highlight clip extracted from a long-form podcast.
@@ -89,7 +91,7 @@ ${scriptDirective}
 Return a clean, high-impact JSON object matching the requested schema.`;
 
       const response = await ai.models.generateContent({
-        model: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
+        model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -136,17 +138,17 @@ function generateRuleBasedCopy(req: SocialCopyRequest): SocialCopyResult {
   let pinnedComment = '';
 
   if (isDevanagari) {
-    title = '90% क्रिएटर्स यह गलती करते हैं 🤯';
-    hook = 'अगर आप कंटेंट बना रहे हो, तो यह एक बात आपकी पूरी ग्रोथ बदल सकती है।';
-    caption = 'कंसिस्टेंसी सिर्फ रोज़ पोस्ट करने से नहीं आती, स्ट्रैटेजिक प्लानिंग से आती है। जब हमने शुरुआत की थी, तब समझ आया कि असली खेल ट्रस्ट का है, खाली नंबर्स का नहीं। पूरा वीडियो देखें और अपनी राय बताएं!';
-    hashtags = ['#CreatorEconomy', '#HindiPodcast', '#ContentCreation', '#GrowthMindset', '#StartupIndia', '#Podcasting'];
-    pinnedComment = 'क्या आपको भी कंटेंट बनाते वक्त बर्नआउट महसूस हुआ है? कमेंट्स में शेयर करें 👇';
+    title = 'असली प्यार क्या होता है? 💔 (Relationship Reality)';
+    hook = 'प्यार सिर्फ हार्मोंस नहीं है। जब मुश्किल समय आता है, तब पता चलता है कि कौन साथ खड़ा है।';
+    caption = req.transcriptSnippet || 'लव इस अंडरस्टैंडिंग, गिविंग स्पेस टू ईच अदर, ग्रोइंग टूगेदर। मुश्किल वक्त में जो एक दूसरे को संभालते हैं, वही असली प्यार है। देखिए पूरा क्लिप और अपनी राय बताएं!';
+    hashtags = ['#RelationshipAdvice', '#HindiPodcast', '#LoveReality', '#LifeLessons', '#PodcastShorts', '#EmotionalIntelligence'];
+    pinnedComment = 'आपके हिसाब से रिश्ते में सबसे ज़रूरी चीज़ क्या है? अंडरस्टैंडिंग या स्पेस? कमेंट्स में बताएं 👇';
   } else {
-    title = '90% Founders Make This Exact Mistake 🤯';
-    hook = 'Consistency is not about burning out everyday. It is about building a distribution flywheel that actually compounds.';
-    caption = 'When you share behind-the-scenes struggles and real metrics, trust builds 10x faster than showing artificial success. Watch till the end for the exact shift we made.';
-    hashtags = ['#FounderJourney', '#CreatorEconomy', '#HinglishPodcast', '#StartupIndia', '#ProductStrategy', '#Growth'];
-    pinnedComment = 'Have you experienced this in your startup or content journey? Drop your thoughts below 👇';
+    title = 'What Real Love Actually Looks Like 💔';
+    hook = 'Love is not just hormones or excitement. In crisis and despair, that is when you find out what love truly means.';
+    caption = req.transcriptSnippet || 'Love is understanding, giving space to each other, and growing together. When difficult times hit, the people who hold each other up define real love. Watch till the end.';
+    hashtags = ['#PodcastClip', '#HinglishPodcast', '#RelationshipRealities', '#LifeAdvice', '#ViralReels', '#LoveAndGrowth'];
+    pinnedComment = 'What matters more in a long-term relationship: giving space or constant communication? Drop your thoughts below 👇';
   }
 
   return {

@@ -1,10 +1,6 @@
 import { getSupabaseAdmin, inMemoryDb } from '../db/supabase';
 
 const DEFAULT_MONTHLY_BUDGET_CAP_USD = 50.00;
-const MAX_FREE_REQUESTS_PER_HOUR = 5;
-
-// In-memory sliding-window rate limiter
-const rateLimitMap = new Map<string, number[]>();
 
 export interface SpendStatus {
   monthKey: string;
@@ -113,25 +109,12 @@ export async function recordApiSpend(costUsd: number): Promise<SpendStatus> {
 }
 
 /**
- * Rate limits requests by IP and client fingerprint (sliding 1-hour window).
+ * Rate limits requests by IP and client fingerprint.
+ * Set to unlimited for free beta testing.
  */
-export function checkRateLimit(clientId: string): { allowed: boolean; remaining: number } {
-  const now = Date.now();
-  const oneHourAgo = now - 60 * 60 * 1000;
-
-  const timestamps = rateLimitMap.get(clientId) || [];
-  const recentTimestamps = timestamps.filter((t) => t > oneHourAgo);
-
-  if (recentTimestamps.length >= MAX_FREE_REQUESTS_PER_HOUR) {
-    rateLimitMap.set(clientId, recentTimestamps);
-    return { allowed: false, remaining: 0 };
-  }
-
-  recentTimestamps.push(now);
-  rateLimitMap.set(clientId, recentTimestamps);
-
+export function checkRateLimit(_clientId?: string): { allowed: boolean; remaining: number } {
   return {
     allowed: true,
-    remaining: MAX_FREE_REQUESTS_PER_HOUR - recentTimestamps.length,
+    remaining: 999999,
   };
 }

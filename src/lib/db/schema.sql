@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS public.videos (
     source_url TEXT,
     source_r2_key TEXT,
     language TEXT NOT NULL DEFAULT 'hinglish' CHECK (language IN ('hindi', 'hinglish', 'english', 'auto')),
-    script_preference TEXT NOT NULL DEFAULT 'romanized' CHECK (script_preference IN ('devanagari', 'romanized')),
+    script_preference TEXT NOT NULL DEFAULT 'romanized' CHECK (script_preference IN ('devanagari', 'romanized', 'english')),
     duration_seconds INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'processing', 'completed', 'failed')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

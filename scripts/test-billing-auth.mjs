@@ -162,16 +162,14 @@ async function runVerification() {
   console.log('');
 
   // -------------------------------------------------------------
-  // Test 8: Sliding-Window IP Rate Limiter
+  // Test 8: Rate Limiter (Unlimited in Free Beta)
   // -------------------------------------------------------------
-  console.log('Test 8: Sliding-Window IP Rate Limiting (5 requests/hr)');
+  console.log('Test 8: Rate Limiting (Unlimited for free beta)');
   const testIp = `192.168.1.${Math.floor(Math.random() * 200) + 50}`;
-  for (let i = 1; i <= 5; i++) {
+  for (let i = 1; i <= 10; i++) {
     const rl = checkRateLimit(testIp);
-    assert(rl.allowed === true, `Request #${i} allowed within hourly quota (remaining: ${rl.remaining})`);
+    assert(rl.allowed === true, `Request #${i} allowed without limit`);
   }
-  const blockedReq = checkRateLimit(testIp);
-  assert(blockedReq.allowed === false, '6th request within hour is strictly rate-limited');
   console.log('');
 
   // -------------------------------------------------------------

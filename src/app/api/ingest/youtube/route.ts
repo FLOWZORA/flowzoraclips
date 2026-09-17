@@ -11,7 +11,7 @@ import {
   deductCredit,
   refundCreditOnFailure,
 } from '@/lib/billing/credits';
-import { checkSpendKillSwitch, recordApiSpend, checkRateLimit } from '@/lib/billing/kill-switch';
+import { checkSpendKillSwitch, recordApiSpend } from '@/lib/billing/kill-switch';
 
 /**
  * GET: Quick metadata preview when user enters a YouTube URL.
@@ -56,20 +56,6 @@ export async function POST(req: NextRequest) {
   let creditDeducted = false;
 
   try {
-    // 1. IP Rate Limiter
-    const forwardedFor = req.headers.get('x-forwarded-for');
-    const clientIp = forwardedFor ? forwardedFor.split(',')[0].trim() : '127.0.0.1';
-    const rateLimit = checkRateLimit(clientIp);
-
-    if (!rateLimit.allowed) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Hourly rate limit reached (5 analyses / hour). Please upgrade or try again later.',
-        },
-        { status: 429 }
-      );
-    }
 
     // 2. Spend Kill Switch
     const spendStatus = await checkSpendKillSwitch();

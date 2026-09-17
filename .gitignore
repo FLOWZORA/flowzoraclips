@@ -36,3 +36,5 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+scratch/
+*.tsbuildinfo

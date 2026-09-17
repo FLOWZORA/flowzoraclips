@@ -13,14 +13,14 @@ import {
   Hash,
   Loader2,
 } from 'lucide-react';
-import { CandidateClip } from '@/lib/pipeline/types';
+import { CandidateClip, ScriptPreference } from '@/lib/pipeline/types';
 import { SocialCopyResult } from '@/lib/pipeline/social-copy';
 
 interface SocialCopyModalProps {
   isOpen: boolean;
   onClose: () => void;
   clip: CandidateClip | null;
-  defaultScriptPreference?: 'romanized' | 'devanagari';
+  defaultScriptPreference?: ScriptPreference;
 }
 
 export default function SocialCopyModal({
@@ -30,12 +30,12 @@ export default function SocialCopyModal({
   defaultScriptPreference = 'romanized',
 }: SocialCopyModalProps) {
   const [activePlatform, setActivePlatform] = useState<'youtube' | 'instagram' | 'linkedin' | 'all'>('youtube');
-  const [scriptPreference, setScriptPreference] = useState<'romanized' | 'devanagari'>(defaultScriptPreference);
+  const [scriptPreference, setScriptPreference] = useState<ScriptPreference>(defaultScriptPreference);
   const [loading, setLoading] = useState(false);
   const [copyData, setCopyData] = useState<SocialCopyResult | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  const fetchSocialCopy = async (script: 'romanized' | 'devanagari') => {
+  const fetchSocialCopy = async (script: ScriptPreference) => {
     if (!clip) return;
     setLoading(true);
 
@@ -123,18 +123,28 @@ export default function SocialCopyModal({
           {/* Script Toggle */}
           <div className="flex items-center gap-1 rounded-lg bg-[#0A0B10] p-1 border border-[#242938] shrink-0 w-full sm:w-auto">
             <button
+              onClick={() => setScriptPreference('english')}
+              className={`flex-1 sm:flex-initial rounded px-2.5 py-1.5 sm:py-1 text-xs font-semibold transition-all text-center cursor-pointer ${
+                scriptPreference === 'english'
+                  ? 'bg-[#10B981] text-black font-bold shadow-sm'
+                  : 'text-[#9AA2B6] hover:text-white'
+              }`}
+            >
+              English
+            </button>
+            <button
               onClick={() => setScriptPreference('romanized')}
-              className={`flex-1 sm:flex-initial rounded px-2.5 py-1.5 sm:py-1 text-xs font-semibold transition-all text-center ${
+              className={`flex-1 sm:flex-initial rounded px-2.5 py-1.5 sm:py-1 text-xs font-semibold transition-all text-center cursor-pointer ${
                 scriptPreference === 'romanized'
                   ? 'bg-[#10B981] text-black font-bold shadow-sm'
                   : 'text-[#9AA2B6] hover:text-white'
               }`}
             >
-              Hinglish
+              Romanized Hindi
             </button>
             <button
               onClick={() => setScriptPreference('devanagari')}
-              className={`flex-1 sm:flex-initial rounded px-2.5 py-1.5 sm:py-1 text-xs font-semibold transition-all text-center ${
+              className={`flex-1 sm:flex-initial rounded px-2.5 py-1.5 sm:py-1 text-xs font-semibold transition-all text-center cursor-pointer ${
                 scriptPreference === 'devanagari'
                   ? 'bg-[#10B981] text-black font-bold shadow-sm'
                   : 'text-[#9AA2B6] hover:text-white'
