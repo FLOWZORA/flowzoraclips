@@ -3,7 +3,7 @@ import Navbar from '@/components/Navbar';
 import HeroUploader from '@/components/HeroUploader';
 import ScoringExplainer from '@/components/ScoringExplainer';
 import HindiBenchmarkCallout from '@/components/HindiBenchmarkCallout';
-import PricingTable from '@/components/PricingTable';
+// import PricingTable from '@/components/PricingTable';
 import FaqSection from '@/components/FaqSection';
 import Footer from '@/components/Footer';
 
@@ -46,8 +46,8 @@ export default function HomePage() {
         {/* Hindi/Hinglish Accuracy & Scene-Aware Reframe Callout */}
         <HindiBenchmarkCallout />
 
-        {/* Server-Rendered Plain-HTML Crawlable Pricing */}
-        <PricingTable />
+        {/* Pricing temporarily disabled for 100% free beta period */}
+        {/* <PricingTable /> */}
 
         {/* Citation-Backed FAQ */}
         <FaqSection />

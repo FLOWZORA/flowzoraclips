@@ -41,10 +41,10 @@ export default function FaqSection() {
 
           <div className="py-6">
             <h3 className="text-base font-semibold text-white">
-              Is the free tier really recurring every month?
+              Is FLOWZORA Clips really completely free?
             </h3>
             <p className="mt-2.5 text-xs sm:text-sm text-[#A1A1A1] leading-relaxed">
-              Yes. You get 2 videos per month (up to 10 minutes each) every month with no credit card required. If you need more volume, you can buy a one-time Creator Top-Up pack ($12 for 10 videos) without getting locked into a recurring subscription.
+              Yes! FLOWZORA Clips is currently 100% free during our public beta. You can process your podcasts and long videos without any subscription, paid credits, or credit card required.
             </p>
           </div>
         </div>

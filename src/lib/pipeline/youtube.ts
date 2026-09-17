@@ -1,4 +1,9 @@
-import { validateProcessingEligibility } from '../billing/credits';
+import {
+  validateProcessingEligibility,
+  IS_COMPLETELY_FREE,
+  MAX_PAID_VIDEO_DURATION_SEC,
+  MAX_FREE_VIDEO_DURATION_SEC,
+} from '../billing/credits';
 
 export interface YouTubeVideoMetadata {
   videoId: string;
@@ -77,7 +82,9 @@ export async function getYouTubeMetadata(url: string, durationSecEstimate: numbe
 
   const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
   const formattedDuration = formatDuration(durationSecEstimate);
-  const isEligibleForFreeTier = durationSecEstimate <= 600; // <=10 min
+  const isEligibleForFreeTier = IS_COMPLETELY_FREE
+    ? durationSecEstimate <= MAX_PAID_VIDEO_DURATION_SEC
+    : durationSecEstimate <= MAX_FREE_VIDEO_DURATION_SEC;
 
   return {
     videoId,

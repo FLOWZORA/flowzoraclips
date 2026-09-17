@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { CandidateClip } from '@/lib/pipeline/types';
 import ClipVideoPreview from '@/components/ClipVideoPreview';
-import CheckoutButton from '@/components/CheckoutButton';
+// import CheckoutButton from '@/components/CheckoutButton';
 import AuthModal from '@/components/AuthModal';
 import SocialCopyModal from '@/components/SocialCopyModal';
 
@@ -85,8 +85,7 @@ export default function HeroUploader() {
         if (json.success && json.metadata) {
           setYoutubeMetadata(json.metadata);
           if (!json.metadata.isEligibleForFreeTier) {
-            setRequiresTopup(true);
-            setErrorMessage(`Video duration (${json.metadata.formattedDuration}) exceeds the 10-minute Free Tier cap. A Creator Top-Up is required to process.`);
+            setErrorMessage(`Video duration (${json.metadata.formattedDuration}) exceeds the maximum 60-minute processing limit.`);
           }
         }
       } catch (err) {
@@ -512,11 +511,11 @@ export default function HeroUploader() {
                       </span>
                       {youtubeMetadata.isEligibleForFreeTier ? (
                         <span className="rounded bg-[#10B981]/15 text-[#10B981] px-2 py-0.5 text-[11px] font-bold">
-                          ✓ Free Tier Eligible (≤10m)
+                          ✓ Free Beta (≤60m)
                         </span>
                       ) : (
                         <span className="rounded bg-[#FF5722]/15 text-[#FF5722] px-2 py-0.5 text-[11px] font-bold">
-                          ⚠ Top-Up Required (&gt;10m)
+                          ⚠ Exceeds Limit (&gt;60m)
                         </span>
                       )}
                     </div>
@@ -527,38 +526,26 @@ export default function HeroUploader() {
           )}
         </div>
 
-        {/* Free Tier Notice & Safeguard */}
+        {/* Free Beta Notice & Safeguard */}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-[#9AA2B6] px-1">
           <div className="flex items-center gap-1.5 text-[#10B981]">
-            <ShieldCheck className="h-4 w-4" />
-            <span>Monthly Recurring Free Tier: 2 videos / month (≤10 min each)</span>
+            <Sparkles className="h-4 w-4" />
+            <span>100% Free Public Beta • No Credit Card Required</span>
           </div>
-          <div>No credit card required for free clips</div>
+          <div>Hindi &amp; Hinglish AI • Scene-Aware 9:16 Reframe</div>
         </div>
 
-        {/* Error / Upgrade Prompt Banner */}
+        {/* Error / Auth Prompt Banner */}
         {errorMessage && (
           <div className="mt-4 rounded-xl border border-[#EF4444]/40 bg-[#EF4444]/10 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-start gap-2.5">
               <AlertTriangle className="h-5 w-5 text-[#EF4444] shrink-0 mt-0.5" />
               <div>
                 <p className="text-xs font-semibold text-white">{errorMessage}</p>
-                {requiresTopup && (
-                  <p className="text-[11px] text-[#9AA2B6] mt-0.5">
-                    Free accounts are hard-capped at 10 minutes. Top-up packs allow up to 60-minute videos.
-                  </p>
-                )}
               </div>
             </div>
 
             <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
-              {requiresTopup && (
-                <CheckoutButton
-                  packId="creator_10"
-                  label="Buy 10 Credits ($12)"
-                  className="rounded-lg bg-[#FF5722] px-3.5 py-1.5 text-xs font-bold text-white hover:bg-[#F44336]"
-                />
-              )}
               {requiresAuth && (
                 <button
                   type="button"

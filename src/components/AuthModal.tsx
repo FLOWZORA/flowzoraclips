@@ -82,7 +82,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModal
           Sign In to Access Your Free Clips
         </h3>
         <p className="mt-1.5 text-xs text-[#9AA2B6] leading-relaxed">
-          No passwords required. We'll send a secure passwordless magic link to your email. Each account includes <strong>2 free video clips/month</strong> forever.
+          No passwords required. We'll send a secure passwordless magic link to your email. <strong>100% free access</strong> during public beta.
         </p>
 
         {message ? (
@@ -144,7 +144,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModal
 
             <div className="pt-2 flex items-center justify-center gap-1.5 text-[11px] text-[#626B82]">
               <Shield className="h-3.5 w-3.5 text-[#10B981]" />
-              <span>Zero spam • Recurring 2 free videos monthly allotment</span>
+              <span>Zero spam • 100% free access during public beta</span>
             </div>
           </form>
         )}

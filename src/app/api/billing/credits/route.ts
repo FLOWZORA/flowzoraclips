@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin, inMemoryDb } from '@/lib/db/supabase';
 import { checkSpendKillSwitch, checkRateLimit } from '@/lib/billing/kill-switch';
+import { IS_COMPLETELY_FREE } from '@/lib/billing/credits';
 
 export async function GET(req: NextRequest) {
   try {
@@ -14,6 +15,23 @@ export async function GET(req: NextRequest) {
 
     // Spend kill switch status
     const spendStatus = await checkSpendKillSwitch();
+
+    // In 100% free beta mode, return unlimited status
+    if (IS_COMPLETELY_FREE) {
+      return NextResponse.json({
+        success: true,
+        authenticated: true,
+        user: {
+          id: userId,
+          email: '',
+          creditsRemaining: 999,
+          monthlyAllowance: 999,
+          plan: 'free_beta',
+        },
+        spendStatus,
+        rateLimit,
+      });
+    }
 
     // Query user record
     let user: any = null;

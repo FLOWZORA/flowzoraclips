@@ -98,22 +98,14 @@ export default function Navbar() {
             <a href="#accuracy" className="hover:text-white transition-colors">
               Hindi/Hinglish Accuracy
             </a>
-            <Link href="/pricing" className="hover:text-white transition-colors">
-              Pricing
-            </Link>
           </nav>
 
-          {/* Right Actions: Credit Counter + Auth + Pill CTA */}
+          {/* Right Actions: Free Beta Badge + Auth + Pill CTA */}
           <div className="flex items-center gap-2 sm:gap-2.5">
-            {/* Live Credit Counter Pill */}
-            <div className="flex items-center gap-1.5 rounded-full border border-[#262626] bg-[#0A0A0A] px-3 py-1 text-xs font-mono text-[#EDEDED]">
-              <Zap className="h-3 w-3 text-[#FFB800] fill-[#FFB800]" />
-              <span className="tabular-nums">
-                <strong className="text-white">{user?.creditsRemaining ?? 2}</strong>{' '}
-                <span className="text-[#A1A1A1] font-sans">
-                  {user?.plan === 'creator_topup' ? 'Top-Up vids' : 'Free vids'}
-                </span>
-              </span>
+            {/* 100% Free Beta Pill */}
+            <div className="flex items-center gap-1.5 rounded-full border border-[#10B981]/30 bg-[#10B981]/10 px-3 py-1 text-xs font-medium text-[#10B981]">
+              <Sparkles className="h-3 w-3 text-[#10B981]" />
+              <span>100% Free Beta</span>
             </div>
 
             {/* Auth / Sign In Button */}

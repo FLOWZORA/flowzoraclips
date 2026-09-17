@@ -1,7 +1,8 @@
 import { getSupabaseAdmin, inMemoryDb } from '../db/supabase';
 
-export const MAX_FREE_VIDEO_DURATION_SEC = 600; // 10 minutes hard cap (server-enforced)
-export const MAX_PAID_VIDEO_DURATION_SEC = 3600; // 60 minutes for top-up credits
+export const IS_COMPLETELY_FREE: boolean = true; // Toggle for 100% free beta period
+export const MAX_FREE_VIDEO_DURATION_SEC = 600; // 10 minutes default free cap
+export const MAX_PAID_VIDEO_DURATION_SEC = 3600; // 60 minutes max processing cap
 
 export interface CreditEligibilityResult {
   allowed: boolean;
@@ -19,6 +20,26 @@ export async function validateProcessingEligibility(
   userId: string,
   durationSeconds: number
 ): Promise<CreditEligibilityResult> {
+  // If in 100% free beta mode, allow all users with high duration limits (up to 60 min)
+  if (IS_COMPLETELY_FREE) {
+    if (durationSeconds > MAX_PAID_VIDEO_DURATION_SEC) {
+      return {
+        allowed: false,
+        reason: `Video length (${Math.round(durationSeconds / 60)} min) exceeds the maximum 60-minute processing limit during free beta.`,
+        creditsRemaining: 999,
+        plan: 'free_beta',
+        isFreeTier: true,
+      };
+    }
+
+    return {
+      allowed: true,
+      creditsRemaining: 999,
+      plan: 'free_beta',
+      isFreeTier: true,
+    };
+  }
+
   const supabase = getSupabaseAdmin();
   let user: any = null;
 
@@ -78,7 +99,11 @@ export async function validateProcessingEligibility(
 /**
  * Deducts 1 credit from user's balance and records ledger transaction.
  */
-export async function deductCredit(userId: string, videoId: string): Promise<number> {
+export async function deductCredit(userId: string, videoJobId: string): Promise<number> {
+  if (IS_COMPLETELY_FREE) {
+    return 999;
+  }
+
   const supabase = getSupabaseAdmin();
 
   if (supabase) {
