@@ -931,7 +931,7 @@ export default function HeroUploader() {
                             <span className="hidden xs:inline">Social</span>
                           </button>
                           <a
-                            href={`/api/export/render?clipId=${clip.id}&download=true&format=${aspectRatio}&startTime=${clip.startTime}&endTime=${clip.endTime}`}
+                            href={`/api/export/render?clipId=${clip.id}&download=true&format=${aspectRatio}&startTime=${clip.startTime}&endTime=${clip.endTime}&sourceVideoUrl=${encodeURIComponent(sourceMediaUrl || '/media/podcast-sample.mp4')}&fitMode=fit`}
                             download={`flowzora_${clip.id}_${aspectRatio.replace(':', 'x')}.mp4`}
                             className="flex items-center justify-center gap-1 rounded-md border border-[#262626] bg-[#111111] px-3 py-2 text-xs font-medium text-[#EDEDED] hover:border-[#383838] transition-colors min-h-[38px]"
                             title={`Download ${aspectRatio} MP4`}

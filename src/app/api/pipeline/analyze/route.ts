@@ -4,7 +4,10 @@ import { SourceLanguage, ScriptPreference } from '@/lib/pipeline/types';
 import { validateProcessingEligibility, deductCredit, refundCreditOnFailure } from '@/lib/billing/credits';
 import { checkSpendKillSwitch, recordApiSpend } from '@/lib/billing/kill-switch';
 import { extractAudioBuffer, isVideoFile } from '@/lib/pipeline/audio-extractor';
-import { getBufferFromR2 } from '@/lib/storage/r2';
+import { inMemoryR2, getBufferFromR2 } from '@/lib/storage/r2';
+import path from 'path';
+import os from 'os';
+import fs from 'fs';
 
 export async function POST(req: NextRequest) {
   let activeUserId = 'demo-user-1';
@@ -36,10 +39,19 @@ export async function POST(req: NextRequest) {
         let rawBuffer = Buffer.from(arrayBuf);
         filename = file.name;
 
-        // If this is a video file, extract the audio-only stream first.
-        // This compresses a 100+ MB MP4 to a ~3 MB MP3 so it fits Groq's 25 MB limit.
+        // If this is a video file, cache the original video so it can be cropped and downloaded as MP4!
         if (isVideoFile(filename)) {
-          console.log(`[API] Video file detected (${(rawBuffer.length / 1048576).toFixed(1)} MB). Extracting audio stream...`);
+          console.log(`[API] Video file detected (${(rawBuffer.length / 1048576).toFixed(1)} MB). Caching for export and extracting audio...`);
+          inMemoryR2.set('latest_source.mp4', { buffer: rawBuffer, contentType: 'video/mp4', uploadedAt: new Date().toISOString() });
+          try {
+            fs.writeFileSync(path.join(os.tmpdir(), 'flowzora_latest_source.mp4'), rawBuffer);
+          } catch (_) {}
+          try {
+            const uploadsDir = path.resolve(process.cwd(), 'public/media/uploads');
+            if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+            fs.writeFileSync(path.join(uploadsDir, 'latest_source.mp4'), rawBuffer);
+          } catch (_) {}
+
           try {
             const extracted = await extractAudioBuffer(rawBuffer, filename);
             audioBuffer = extracted.audioBuffer;

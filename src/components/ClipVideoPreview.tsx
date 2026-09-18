@@ -566,6 +566,7 @@ export default function ClipVideoPreview({
           scriptPreference,
           format: aspectRatio,
           fitMode: framingMode,
+          sourceVideoUrl: sourceMediaUrl || '/media/podcast-sample.mp4',
         }),
       });
 
