@@ -87,10 +87,8 @@ export async function transcribeAudio(
     // For hinglish or auto, let Whisper auto-detect to retain bilingual code-switching
 
     const promptText = language === 'english'
-      ? 'Podcast interview and speech discussion.'
-      : language === 'hindi'
-      ? 'हिंदी पॉडकास्ट साक्षात्कार और बातचीत।'
-      : 'Hindi and English podcast conversation.';
+      ? 'Podcast interview and discussion in English.'
+      : 'Hindi and English podcast conversation with code-switching. हिंदी और इंग्लिश बातचीत।';
 
     formData.append('prompt', promptText);
 
@@ -129,11 +127,20 @@ export async function transcribeAudio(
 
 function parseWhisperVerboseResponse(data: any): WhisperTranscriptionResult {
   const rawWords: any[] = data.words || [];
-  const words: WordTimestamp[] = rawWords.map((w) => ({
-    word: w.word,
-    start: Number(w.start),
-    end: Number(w.end),
-  }));
+  const words: WordTimestamp[] = rawWords.map((w) => {
+    const start = Number(w.start);
+    let end = Number(w.end);
+    // Sanity check: no single word in conversational speech lasts > 2.0s.
+    // If Whisper stretched a word to the segment end during a pause, clamp it safely.
+    if (end - start > 2.0) {
+      end = Number((start + 1.2).toFixed(2));
+    }
+    return {
+      word: w.word,
+      start,
+      end,
+    };
+  });
 
   const rawSegments: any[] = data.segments || [];
   const segments: TranscriptSegment[] = rawSegments.map((s, idx) => ({

@@ -75,7 +75,11 @@ export default function ClipVideoPreview({
       const mapped = rawWords
         .map((w: any) => {
           const rawStart = Number(w.start ?? 0);
-          const rawEnd = Number(w.end ?? rawStart + 0.3);
+          let rawEnd = Number(w.end ?? rawStart + 0.3);
+          // Safety cap: single word should never exceed 1.8s (Whisper silence artifact)
+          if (rawEnd - rawStart > 1.8) {
+            rawEnd = rawStart + 1.1;
+          }
           const s = Math.max(0, Number.isFinite(rawStart) ? rawStart - offset : 0);
           const e = Math.max(s + 0.1, Number.isFinite(rawEnd) ? rawEnd - offset : s + 0.3);
           return {
@@ -98,6 +102,9 @@ export default function ClipVideoPreview({
         }
         if (mapped[i].relEnd <= mapped[i].relStart + 0.12) {
           mapped[i].relEnd = Number((mapped[i].relStart + 0.20).toFixed(2));
+        }
+        if (mapped[i].relEnd > mapped[i].relStart + 1.6) {
+          mapped[i].relEnd = Number((mapped[i].relStart + 1.1).toFixed(2));
         }
       }
 
@@ -736,8 +743,8 @@ export default function ClipVideoPreview({
                         {visibleWords.map((w: any, idx: number) => {
                           const nextW = visibleWords[idx + 1];
                           const wordEnd = Math.max(w.relEnd, w.relStart + 0.12);
-                          // Smooth continuous karaoke transition: active word stays highlighted until next word starts
-                          const activeEnd = nextW ? Math.max(w.relStart + 0.08, nextW.relStart) : wordEnd + 0.22;
+                          // Smooth continuous karaoke transition: active word hands off to next word, or turns white after speaking
+                          const activeEnd = nextW ? Math.min(nextW.relStart, wordEnd + 0.35) : wordEnd + 0.35;
 
                           const isCurrent = currentTime >= w.relStart && currentTime < activeEnd;
                           const isPast = currentTime >= activeEnd;
