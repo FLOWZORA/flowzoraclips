@@ -17,8 +17,10 @@ export async function GET(req: NextRequest) {
     const isDownload = searchParams.get('download') === 'true';
     const startTime = Number(searchParams.get('startTime') || 0);
     const endTime = Number(searchParams.get('endTime') || 25);
+    const sourceVideoUrl = searchParams.get('sourceVideoUrl') || '';
 
-    const filename = `flowzora_${clipId}_${format.replace(':', 'x')}.mp4`;
+    // Include startTime and endTime so each clip and nudge variation has a unique filename and never serves stale clips
+    const filename = `flowzora_${clipId}_${Math.round(startTime)}s-${Math.round(endTime)}s_${format.replace(':', 'x')}.mp4`;
     const localExportPath = path.resolve(process.cwd(), 'public/media/exports', filename);
     const tmpExportPath = path.join(os.tmpdir(), filename);
 
@@ -52,7 +54,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 3. If not rendered yet, render it right now on demand!
+    // 3. If not rendered yet, render it on demand using the genuine source video
     if (!fileBuffer) {
       await exportClipToMp4({
         clipId,
@@ -60,6 +62,7 @@ export async function GET(req: NextRequest) {
         endTime,
         format,
         fitMode,
+        sourceVideoUrl,
       });
 
       if (fs.existsSync(localExportPath)) {
@@ -136,6 +139,7 @@ export async function POST(req: NextRequest) {
       format = '9:16',
       fitMode = 'fit',
       userId = 'demo-user-1',
+      sourceVideoUrl = '',
     } = body;
 
     if (!clipId) {
@@ -153,6 +157,7 @@ export async function POST(req: NextRequest) {
       format,
       fitMode,
       userId,
+      sourceVideoUrl,
     });
 
     return NextResponse.json({

@@ -38,3 +38,9 @@ Thumbs.db
 *.swp
 scratch/
 *.tsbuildinfo
+
+# Media files & exports
+public/media/exports/*.mp4
+public/media/uploads/*
+!public/media/uploads/.gitkeep
+!public/media/exports/.gitkeep

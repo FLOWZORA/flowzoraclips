@@ -74,7 +74,7 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
   const safeEndTime = Number((startTime + durationSec).toFixed(1));
   const jobId = `render-${clipId}-${Date.now()}`;
   const fileKey = `exports/${userId}/${jobId}_${format.replace(':', 'x')}.mp4`;
-  const outputFilename = `flowzora_${clipId}_${format.replace(':', 'x')}.mp4`;
+  const outputFilename = `flowzora_${clipId}_${Math.round(startTime)}s-${Math.round(endTime)}s_${format.replace(':', 'x')}.mp4`;
 
   // 1. Build candidate clip structure
   const mockClip: CandidateClip = {
@@ -148,6 +148,23 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
     const publicPath = path.resolve(process.cwd(), 'public', sourceVideoUrl.replace(/^\//, ''));
     if (fs.existsSync(publicPath)) {
       resolvedInputPath = publicPath;
+    }
+  }
+
+  if (!resolvedInputPath && sourceVideoUrl && (sourceVideoUrl.startsWith('http://') || sourceVideoUrl.startsWith('https://')) && !sourceVideoUrl.includes('youtube.com') && !sourceVideoUrl.includes('youtu.be')) {
+    try {
+      console.log(`[Video Exporter] Fetching source video from remote URL: ${sourceVideoUrl}`);
+      const remoteRes = await fetch(sourceVideoUrl);
+      if (remoteRes.ok) {
+        const arr = await remoteRes.arrayBuffer();
+        const buf = Buffer.from(arr);
+        if (buf.length > 50000) {
+          fs.writeFileSync(tmpSourcePath, buf);
+          resolvedInputPath = tmpSourcePath;
+        }
+      }
+    } catch (fetchErr) {
+      console.warn('[Video Exporter] Failed to fetch remote source video:', fetchErr);
     }
   }
 
@@ -264,7 +281,7 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
         clipId,
         format,
         status: 'completed',
-        downloadUrl: `/api/export/render?clipId=${clipId}&download=true&format=${format}&t=${Date.now()}`,
+        downloadUrl: `/api/export/render?clipId=${clipId}&download=true&format=${format}&startTime=${startTime}&endTime=${endTime}&sourceVideoUrl=${encodeURIComponent(sourceVideoUrl)}&t=${Date.now()}`,
         fileKey,
         renderTimeSec: Math.max(1, Math.round(durationSec * 0.2)),
         ffmpegCommand: `ffmpeg ${args.join(' ')}`,
@@ -294,7 +311,7 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
     clipId,
     format,
     status: 'completed',
-    downloadUrl: `/api/export/render?clipId=${clipId}&download=true&format=${format}`,
+    downloadUrl: `/api/export/render?clipId=${clipId}&download=true&format=${format}&startTime=${startTime}&endTime=${endTime}&sourceVideoUrl=${encodeURIComponent(sourceVideoUrl)}`,
     fileKey,
     renderTimeSec: Math.max(2, Math.round(durationSec * 0.25)),
     ffmpegCommand: jobSpec.command,
