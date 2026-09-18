@@ -676,7 +676,7 @@ export default function HeroUploader() {
                   }`}
                 >
                   <SplitSquareVertical className="h-3.5 w-3.5 text-[#EF4444] shrink-0" />
-                  <span>Clipzi / Naive Cuts</span>
+                  <span>Generic Other Tools</span>
                 </button>
               </div>
             </div>
@@ -880,7 +880,7 @@ export default function HeroUploader() {
                   <AlertTriangle className="h-5 w-5 text-[#EF4444] shrink-0 mt-0.5" />
                   <div>
                     <h3 className="text-base font-semibold text-white">
-                      The Problem with Fixed 60s Chunking (Clipzi's Approach)
+                      The Problem with Fixed 60s Chunking (Generic Other Tools)
                     </h3>
                     <p className="text-xs text-[#A1A1A1] mt-1 leading-relaxed">
                       Naive tools cut audio at strict 60-second timer intervals (0:00–1:00, 1:00–2:00, etc.) without analyzing sentences or pauses. This chops words in half, leaves thoughts unfinished, and creates awkward clips that require tedious manual re-trimming.

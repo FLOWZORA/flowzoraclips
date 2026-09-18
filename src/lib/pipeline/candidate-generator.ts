@@ -19,7 +19,7 @@ const TARGET_STRIDE_SEC = 12;
 
 /**
  * Generates sliding-window candidate segments aligned to natural semantic sentence and pause boundaries.
- * Explicitly avoids naive fixed-interval slicing (Clipzi's limitation).
+ * Explicitly avoids naive fixed-interval slicing (generic other tools' limitation).
  * Enforces strict hard ceiling: all generated clips are <= 35 seconds long.
  */
 export function generateCandidateSegments(

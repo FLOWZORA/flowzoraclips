@@ -106,7 +106,7 @@ export function dedupeAndRankCandidates(
     };
   });
 
-  // Generate Naive Fixed-Interval Chunking (Clipzi's limitation) for direct comparison
+  // Generate Naive Fixed-Interval Chunking (Generic other tools' limitation) for direct comparison
   const naiveClips = generateNaiveFixedIntervalChunks(candidates, totalDuration);
 
   return {
@@ -131,7 +131,7 @@ function calculateTemporalOverlap(a: CandidateWindow, b: CandidateWindow): numbe
 }
 
 /**
- * Simulates naive fixed-interval 30s chunking (used by Clipzi and primitive tools)
+ * Simulates naive fixed-interval 30s chunking (used by generic other tools and primitive cutters)
  * to demonstrate how fixed time slicing cuts sentences mid-word.
  */
 function generateNaiveFixedIntervalChunks(
