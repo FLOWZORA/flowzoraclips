@@ -66,7 +66,7 @@ export default function ClipVideoPreview({
     if (hasValidWords && !isTruncated) {
       const firstStart = Number(rawWords[0]?.start ?? 0);
       // Auto-detect whether timestamps are absolute (relative to source media) or already relative to clipStart
-      const isAbsolute = clipStart > 2 && firstStart >= (clipStart - 1.5);
+      const isAbsolute = clipStart > 0.2 && Math.abs(firstStart - clipStart) <= 3.0;
       const offset = isAbsolute ? clipStart : 0;
 
       // Map to relative timestamps, sanitize negative or NaN values, and sort chronologically
@@ -84,13 +84,18 @@ export default function ClipVideoPreview({
         })
         .sort((a: any, b: any) => a.relStart - b.relStart);
 
-      // Enforce monotonic non-decreasing progression and non-zero duration
-      for (let i = 1; i < mapped.length; i++) {
-        if (mapped[i].relStart < mapped[i - 1].relStart) {
-          mapped[i].relStart = mapped[i - 1].relStart;
+      // Enforce strictly monotonic progression with minimum spacing and non-overlapping bounds
+      for (let i = 0; i < mapped.length; i++) {
+        if (i > 0) {
+          if (mapped[i].relStart < mapped[i - 1].relStart + 0.10) {
+            mapped[i].relStart = Number((mapped[i - 1].relStart + 0.10).toFixed(2));
+          }
+          if (mapped[i - 1].relEnd > mapped[i].relStart) {
+            mapped[i - 1].relEnd = mapped[i].relStart;
+          }
         }
-        if (mapped[i].relEnd <= mapped[i].relStart) {
-          mapped[i].relEnd = Number((mapped[i].relStart + 0.25).toFixed(2));
+        if (mapped[i].relEnd <= mapped[i].relStart + 0.12) {
+          mapped[i].relEnd = Number((mapped[i].relStart + 0.20).toFixed(2));
         }
       }
 
@@ -102,6 +107,7 @@ export default function ClipVideoPreview({
     const step = clipDuration / snippetParts.length;
     return snippetParts.map((w: string, i: number) => ({
       word: w,
+      devanagari: w,
       start: i * step,
       end: (i + 0.9) * step,
       relStart: Number((i * step).toFixed(2)),
@@ -312,9 +318,12 @@ export default function ClipVideoPreview({
       const w = stableWords[i];
       chunk.push(w);
 
-      const hasPunct = /[.?!।,;:]\s*$/.test(w.word);
+      const wordText = (isDevanagari && w.devanagari) ? w.devanagari : w.word;
+      const hasPunct =
+        /[.?!।,;:|।॥…\u2026\u0964\u0965\-]\s*$/.test(wordText) ||
+        /[.?!।,;:]\s*$/.test(w.word);
       const nextWord = stableWords[i + 1];
-      const hasPause = nextWord && (nextWord.relStart - w.relEnd >= 0.35);
+      const hasPause = nextWord && (nextWord.relStart - w.relEnd >= 0.28);
       const maxWords = chunk.length >= 5;
       const isLast = i === stableWords.length - 1;
 
@@ -329,8 +338,8 @@ export default function ClipVideoPreview({
     }
 
     // Assign clean display windows to each phrase:
-    // Transitions smoothly from phrase to phrase without blank flicker during speech,
-    // but naturally hides during prolonged pauses (>1.2s silence) or after speech concludes.
+    // Strictly non-overlapping intervals (displayEnd <= next.start) so phrases switch cleanly.
+    // Transitions smoothly from phrase to phrase without blank flicker during speech.
     const result: Array<{
       words: any[];
       start: number;
@@ -345,17 +354,17 @@ export default function ClipVideoPreview({
       let displayEnd: number;
       if (next) {
         const pauseGap = next.start - current.speechEnd;
-        if (pauseGap > 1.2) {
-          displayEnd = Math.min(next.start, current.speechEnd + 0.8);
+        if (pauseGap > 0.9) {
+          displayEnd = Math.min(next.start, current.speechEnd + 0.45);
         } else {
-          displayEnd = Math.max(current.speechEnd, next.start);
+          // Seamless handoff to next phrase, strictly non-overlapping
+          displayEnd = next.start;
         }
+        displayEnd = Math.min(next.start, Math.max(current.start + 0.15, displayEnd));
       } else {
-        // Last phrase: lingers for up to 1.2s after last spoken word or until clip ends
-        displayEnd = Math.min(clipDuration, current.speechEnd + 1.2);
+        displayEnd = Math.min(clipDuration, current.speechEnd + 0.8);
+        displayEnd = Math.max(current.start + 0.15, displayEnd);
       }
-
-      displayEnd = Math.max(current.start + 0.2, displayEnd);
 
       result.push({
         words: current.words,
@@ -366,7 +375,7 @@ export default function ClipVideoPreview({
     }
 
     return result;
-  }, [clip.id, clipDuration, stableWords]);
+  }, [clip.id, clipDuration, stableWords, isDevanagari, scriptPreference]);
 
   // Advance timer for YouTube embedded preview
   useEffect(() => {
@@ -384,9 +393,9 @@ export default function ClipVideoPreview({
   const activePhrase = React.useMemo(() => {
     if (phrases.length === 0) return null;
 
-    // Anticipation: show first phrase slightly before speech begins (0.4s)
+    // Anticipation: show first phrase slightly before speech begins (0.45s)
     if (currentTime < phrases[0].start) {
-      if (currentTime >= phrases[0].start - 0.4) return phrases[0];
+      if (currentTime >= phrases[0].start - 0.45) return phrases[0];
       return null;
     }
 
@@ -397,8 +406,18 @@ export default function ClipVideoPreview({
       }
     }
 
-    // During silence between phrases or after speech concludes, hide caption box.
-    // Never fall back to phrases[phrases.length - 1] which caused subtitles to freeze mid-video.
+    // Micro-gap bridging: if between phrases with silence < 0.35s, stay on preceding phrase
+    for (let i = 0; i < phrases.length - 1; i++) {
+      if (currentTime >= phrases[i].displayEnd && currentTime < phrases[i + 1].start) {
+        if (currentTime - phrases[i].speechEnd < 0.35) {
+          return phrases[i];
+        }
+        if (phrases[i + 1].start - currentTime < 0.25) {
+          return phrases[i + 1];
+        }
+      }
+    }
+
     return null;
   }, [phrases, currentTime]);
 
@@ -715,12 +734,12 @@ export default function ClipVideoPreview({
                       <div className="flex flex-wrap items-center justify-center gap-1 leading-snug">
                         {visibleWords.map((w: any, idx: number) => {
                           const nextW = visibleWords[idx + 1];
-                          const wordEnd = Math.max(w.relEnd, w.relStart + 0.15);
-                          // Decay/hold window: active word stays highlighted until next word starts, or for ~0.25s after wordEnd
-                          const activeCutoff = nextW ? Math.min(nextW.relStart, wordEnd + 0.2) : wordEnd + 0.25;
+                          const wordEnd = Math.max(w.relEnd, w.relStart + 0.12);
+                          // Smooth continuous karaoke transition: active word stays highlighted until next word starts
+                          const activeEnd = nextW ? Math.max(w.relStart + 0.08, nextW.relStart) : wordEnd + 0.22;
 
-                          const isCurrent = currentTime >= w.relStart && currentTime < activeCutoff;
-                          const isPast = currentTime >= activeCutoff;
+                          const isCurrent = currentTime >= w.relStart && currentTime < activeEnd;
+                          const isPast = currentTime >= activeEnd;
                           const isUpcoming = currentTime < w.relStart;
                           const displayText = isDevanagari && w.devanagari ? w.devanagari : w.word;
 

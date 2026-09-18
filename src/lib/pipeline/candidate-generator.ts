@@ -12,7 +12,7 @@ export interface CandidateWindow {
   snappedToBoundary: boolean;
 }
 
-const SENTENCE_END_REGEX = /[.?!।|]\s*$/;
+const SENTENCE_END_REGEX = /[.?!।,;:|।॥…\u2026\u0964\u0965\-]\s*$/;
 const MIN_CLIP_DURATION_SEC = 15;
 const MAX_CLIP_DURATION_SEC = 35;
 const TARGET_STRIDE_SEC = 12;
@@ -29,7 +29,7 @@ export function generateCandidateSegments(
 ): CandidateWindow[] {
   if (!words || words.length === 0) return [];
 
-  // 1. Identify all semantic boundary points (sentence ends or pauses >0.55s)
+  // 1. Identify all semantic boundary points (sentence ends, Indic punctuation, segment edges, or natural breath pauses)
   interface BoundaryPoint {
     wordIndex: number;
     timestamp: number;
@@ -41,10 +41,16 @@ export function generateCandidateSegments(
 
   for (let i = 0; i < words.length; i++) {
     const w = words[i];
-    const isPunct = SENTENCE_END_REGEX.test(w.word);
-    const hasLongPause = i < words.length - 1 && words[i + 1].start - w.end >= 0.55;
+    const devanagariWord = (w as any).devanagari;
+    const isPunct =
+      SENTENCE_END_REGEX.test(w.word) ||
+      (devanagariWord && SENTENCE_END_REGEX.test(devanagariWord));
+    const hasNaturalPause = i < words.length - 1 && words[i + 1].start - w.end >= 0.30;
+    const isSegmentBoundary =
+      Array.isArray(segments) &&
+      segments.some((s) => Math.abs(s.end - w.end) <= 0.25);
 
-    if (isPunct || hasLongPause || i === words.length - 1) {
+    if (isPunct || hasNaturalPause || isSegmentBoundary || i === words.length - 1) {
       boundaries.push({
         wordIndex: i,
         timestamp: w.end,
