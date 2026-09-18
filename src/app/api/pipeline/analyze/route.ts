@@ -4,6 +4,7 @@ import { SourceLanguage, ScriptPreference } from '@/lib/pipeline/types';
 import { validateProcessingEligibility, deductCredit, refundCreditOnFailure } from '@/lib/billing/credits';
 import { checkSpendKillSwitch, recordApiSpend } from '@/lib/billing/kill-switch';
 import { extractAudioBuffer, isVideoFile } from '@/lib/pipeline/audio-extractor';
+import { getBufferFromR2 } from '@/lib/storage/r2';
 
 export async function POST(req: NextRequest) {
   let activeUserId = 'demo-user-1';
@@ -66,6 +67,36 @@ export async function POST(req: NextRequest) {
       scriptPreference = body.scriptPreference || 'romanized';
       if (body.userId) activeUserId = body.userId;
       if (body.durationSec) estimatedDurationSec = Number(body.durationSec);
+      filename = body.filename || 'media.mp4';
+
+      if (body.fileKey) {
+        console.log(`[API] Fetching file from R2 key: ${body.fileKey}`);
+        const r2Buffer = await getBufferFromR2(body.fileKey);
+        if (r2Buffer && r2Buffer.length > 0) {
+          if (isVideoFile(filename)) {
+            console.log(`[API] Video file from R2 detected (${(r2Buffer.length / 1048576).toFixed(1)} MB). Extracting audio...`);
+            try {
+              const extracted = await extractAudioBuffer(r2Buffer, filename);
+              audioBuffer = extracted.audioBuffer;
+              filename = extracted.audioFilename;
+            } catch (extractErr: any) {
+              console.error('[API] Audio extraction from R2 file failed:', extractErr.message);
+              return NextResponse.json(
+                { success: false, error: `Audio extraction failed: ${extractErr.message}` },
+                { status: 422 }
+              );
+            }
+          } else {
+            audioBuffer = r2Buffer;
+          }
+          estimatedDurationSec = Math.max(30, Math.min(3600, Math.round((r2Buffer.length / (1024 * 1024)) * 60)));
+        } else {
+          return NextResponse.json(
+            { success: false, error: 'Could not retrieve media file from Cloudflare R2 storage. Please re-upload or try again.' },
+            { status: 404 }
+          );
+        }
+      }
     }
 
     // Ensure audio data is provided — no silent fallback to sample subtitles

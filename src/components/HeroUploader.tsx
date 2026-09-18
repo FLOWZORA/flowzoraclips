@@ -160,7 +160,16 @@ export default function HeroUploader() {
           }),
         });
 
-        const json = await res.json();
+        const resText = await res.text();
+        let json: any = null;
+        try {
+          json = JSON.parse(resText);
+        } catch {
+          setErrorMessage(resText.slice(0, 150) || `Server error (${res.status})`);
+          setIsProcessing(false);
+          return;
+        }
+
         if (!res.ok || !json.success) {
           const msg = json.error || 'YouTube ingestion failed.';
           setErrorMessage(msg);
@@ -211,61 +220,126 @@ export default function HeroUploader() {
       }
 
       // -------------------------------------------------------------
-      // CASE 2: Cloud Storage Archive (Graceful / Non-Blocking)
+      // CASE 2: Highlight Extraction Pipeline with R2 Direct Upload
       // -------------------------------------------------------------
-      if (selectedFile) {
-        try {
-          const presignRes = await fetch('/api/upload/presigned-url', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              filename: selectedFile.name,
-              contentType: selectedFile.type || 'video/mp4',
-              fileSize: selectedFile.size,
-              userId: activeUserId,
-            }),
-          });
-          const presignData = await presignRes.json();
-          if (presignData?.success && presignData.uploadUrl) {
-            await new Promise<void>((resolve) => {
-              const xhr = new XMLHttpRequest();
-              xhr.open('PUT', presignData.uploadUrl);
-              xhr.setRequestHeader('Content-Type', selectedFile.type || 'video/mp4');
-              xhr.onload = () => resolve();
-              xhr.onerror = () => resolve();
-              xhr.send(selectedFile);
-            });
-          }
-        } catch (_) {
-          // Cloud storage archive is optional; proceed directly to live AI analysis
-        }
-      }
-
-      // -------------------------------------------------------------
-      // CASE 3: Highlight Extraction Pipeline
-      // -------------------------------------------------------------
-      setStatusMessage('Transcribing speech with word-level timestamps...');
-      setTimeout(() => setStatusMessage('Detecting English & Hindi filler words...'), 350);
-      setTimeout(() => setStatusMessage('Snapping windows to semantic sentence boundaries...'), 700);
-      setTimeout(() => setStatusMessage('Evaluating Hook, Coherence, Emotion & Trend via Gemini 2.5 Flash...'), 1100);
-
       if (!selectedFile) {
         setErrorMessage('Please select a video or audio file to upload before extracting clips.');
         setIsProcessing(false);
         return;
       }
 
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('language', language);
-      formData.append('scriptPreference', scriptPreference);
-      formData.append('userId', activeUserId);
-      const res = await fetch('/api/pipeline/analyze', {
-        method: 'POST',
-        body: formData,
-      });
+      const fileSizeMB = selectedFile.size / (1024 * 1024);
+      let uploadedR2FileKey: string | null = null;
 
-      const json = await res.json();
+      // STEP 1: Direct Cloudflare R2 Upload (bypasses Vercel 4.5MB serverless limit)
+      try {
+        setStatusMessage(`Preparing cloud storage for ${fileSizeMB.toFixed(1)} MB media...`);
+        const presignRes = await fetch('/api/upload/presigned-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: selectedFile.name,
+            contentType: selectedFile.type || 'video/mp4',
+            fileSize: selectedFile.size,
+            userId: activeUserId,
+          }),
+        });
+
+        const presignText = await presignRes.text();
+        let presignData: any = null;
+        try {
+          presignData = JSON.parse(presignText);
+        } catch (_) {}
+
+        if (presignData?.success && presignData.uploadUrl && !presignData.isSimulated) {
+          setStatusMessage(`Uploading media (${fileSizeMB.toFixed(1)} MB) to Cloudflare R2...`);
+          await new Promise<void>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('PUT', presignData.uploadUrl);
+            xhr.setRequestHeader('Content-Type', selectedFile.type || 'video/mp4');
+            xhr.upload.onprogress = (evt) => {
+              if (evt.lengthComputable) {
+                const pct = Math.round((evt.loaded / evt.total) * 100);
+                setStatusMessage(`Uploading media (${fileSizeMB.toFixed(1)} MB): ${pct}%...`);
+              }
+            };
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                resolve();
+              } else {
+                reject(new Error(`Cloud storage upload failed with status ${xhr.status}`));
+              }
+            };
+            xhr.onerror = () => reject(new Error('Network error during cloud storage upload'));
+            xhr.send(selectedFile);
+          });
+
+          uploadedR2FileKey = presignData.fileKey;
+        } else if (fileSizeMB > 4.5) {
+          // File exceeds Vercel 4.5MB limit and R2 is not configured
+          setErrorMessage(
+            `File size (${fileSizeMB.toFixed(1)} MB) exceeds Vercel's 4.5 MB serverless limit. To process files over 4.5 MB, please configure Cloudflare R2 environment variables (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY) in your Vercel project dashboard, or paste the YouTube link in the YouTube URL tab directly!`
+          );
+          setIsProcessing(false);
+          return;
+        }
+      } catch (uploadErr: any) {
+        console.warn('[Upload] Direct R2 upload error:', uploadErr.message);
+        if (fileSizeMB > 4.5) {
+          setErrorMessage(
+            `Direct upload error: ${uploadErr.message}. For files larger than 4.5 MB, please ensure Cloudflare R2 is configured in Vercel or use the YouTube URL tab.`
+          );
+          setIsProcessing(false);
+          return;
+        }
+      }
+
+      // STEP 2: Highlight Extraction Pipeline
+      setStatusMessage('Transcribing speech with word-level timestamps...');
+      setTimeout(() => setStatusMessage('Detecting English & Hindi filler words...'), 350);
+      setTimeout(() => setStatusMessage('Snapping windows to semantic sentence boundaries...'), 700);
+      setTimeout(() => setStatusMessage('Evaluating Hook, Coherence, Emotion & Trend via Gemini 2.5 Flash...'), 1100);
+
+      let res: Response;
+      if (uploadedR2FileKey) {
+        // Send lightweight JSON referencing R2 object key — zero Vercel 4.5MB limit issue!
+        res = await fetch('/api/pipeline/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileKey: uploadedR2FileKey,
+            filename: selectedFile.name,
+            language,
+            scriptPreference,
+            userId: activeUserId,
+          }),
+        });
+      } else {
+        // File <= 4.5MB can be sent directly via multipart form
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        formData.append('language', language);
+        formData.append('scriptPreference', scriptPreference);
+        formData.append('userId', activeUserId);
+        res = await fetch('/api/pipeline/analyze', {
+          method: 'POST',
+          body: formData,
+        });
+      }
+
+      const resText = await res.text();
+      let json: any = null;
+      try {
+        json = JSON.parse(resText);
+      } catch {
+        if (res.status === 413) {
+          setErrorMessage('File size exceeds serverless upload limit (4.5 MB). Please configure Cloudflare R2 or use the YouTube URL tab.');
+        } else {
+          setErrorMessage(resText.slice(0, 160) || `Server error (${res.status})`);
+        }
+        setIsProcessing(false);
+        return;
+      }
 
       if (!res.ok || !json.success) {
         const msg = json.error || 'Pipeline analysis failed';

@@ -144,3 +144,36 @@ export async function uploadBufferToR2(
     publicUrl: `http://localhost:3000/api/upload/simulate-view?key=${encodeURIComponent(fileKey)}`,
   };
 }
+
+/**
+ * Retrieves a file Buffer from Cloudflare R2 or in-memory fallback.
+ */
+export async function getBufferFromR2(fileKey: string): Promise<Buffer | null> {
+  const client = getR2Client();
+
+  if (client) {
+    try {
+      const res = await client.send(
+        new GetObjectCommand({
+          Bucket: R2_BUCKET_NAME,
+          Key: fileKey,
+        })
+      );
+
+      if (res.Body) {
+        const byteArray = await res.Body.transformToByteArray();
+        return Buffer.from(byteArray);
+      }
+    } catch (err: any) {
+      console.error(`[R2] getBufferFromR2 failed for key "${fileKey}":`, err.message);
+    }
+  }
+
+  // Fallback to in-memory store
+  const stored = inMemoryR2.get(fileKey);
+  if (stored) {
+    return stored.buffer;
+  }
+
+  return null;
+}
