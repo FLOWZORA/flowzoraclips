@@ -84,14 +84,25 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 4. Reliable Fallback: Always serve genuine playable MP4, never corrupt dummy bytes!
+    // 4. Source Video Fallback: Check cached uploaded source video (no sample video fallback)
     if (!fileBuffer || fileBuffer.length <= 50000) {
-      const samplePath = path.resolve(process.cwd(), 'public/media/podcast-sample.mp4');
-      if (fs.existsSync(samplePath)) {
-        fileBuffer = fs.readFileSync(samplePath);
-      } else {
-        fileBuffer = Buffer.alloc(1024, 0);
+      const tmpSourcePath = path.join(os.tmpdir(), 'flowzora_latest_source.mp4');
+      if (fs.existsSync(tmpSourcePath)) {
+        fileBuffer = fs.readFileSync(tmpSourcePath);
       }
+    }
+    if (!fileBuffer || fileBuffer.length <= 50000) {
+      const uploadsPath = path.resolve(process.cwd(), 'public/media/uploads/latest_source.mp4');
+      if (fs.existsSync(uploadsPath)) {
+        fileBuffer = fs.readFileSync(uploadsPath);
+      }
+    }
+
+    if (!fileBuffer || fileBuffer.length <= 50000) {
+      return NextResponse.json(
+        { error: 'Clip export not found. Please upload a video file or generate clips first.' },
+        { status: 404 }
+      );
     }
 
     const headers = new Headers();

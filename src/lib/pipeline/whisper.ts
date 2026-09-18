@@ -9,9 +9,9 @@ export interface WhisperTranscriptionResult {
 }
 
 /**
- * Transcribe audio using OpenAI Whisper API with word-level timestamps.
- * Falls back to demo sample transcript ONLY when no file is provided (demo mode).
- * Throws descriptive errors when a real file fails to transcribe.
+ * Transcribe audio using Groq / OpenAI Whisper API with word-level timestamps.
+ * Requires genuine user-uploaded media or ingested YouTube audio.
+ * Throws descriptive errors when transcription cannot be completed.
  */
 export async function transcribeAudio(
   audioBuffer?: Buffer | Uint8Array,

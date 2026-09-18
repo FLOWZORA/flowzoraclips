@@ -64,7 +64,7 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
     clipId,
     startTime,
     endTime,
-    sourceVideoUrl = '/media/podcast-sample.mp4',
+    sourceVideoUrl = '',
     scriptPreference = 'romanized',
     format = '9:16',
     userId = 'demo-user-1',
@@ -151,10 +151,6 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
     }
   }
 
-  const defaultSamplePath = path.resolve(process.cwd(), 'public/media/podcast-sample.mp4');
-  if (!resolvedInputPath && fs.existsSync(defaultSamplePath)) {
-    resolvedInputPath = defaultSamplePath;
-  }
 
   // 3. Check for remote Railway worker
   const workerUrl = process.env.RAILWAY_WORKER_URL;
@@ -282,8 +278,6 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
   let fallbackBuffer: Buffer | null = null;
   if (resolvedInputPath && fs.existsSync(/*turbopackIgnore: true*/ resolvedInputPath)) {
     fallbackBuffer = fs.readFileSync(/*turbopackIgnore: true*/ resolvedInputPath);
-  } else if (fs.existsSync(defaultSamplePath)) {
-    fallbackBuffer = fs.readFileSync(defaultSamplePath);
   }
 
   if (fallbackBuffer && fallbackBuffer.length > 50000) {

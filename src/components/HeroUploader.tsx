@@ -37,7 +37,7 @@ export default function HeroUploader() {
   const [scriptPreference, setScriptPreference] = useState<ScriptPreference>('romanized');
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('9:16');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [sourceMediaUrl, setSourceMediaUrl] = useState<string>('/media/podcast-sample.mp4');
+  const [sourceMediaUrl, setSourceMediaUrl] = useState<string>('');
   const [sourceMediaType, setSourceMediaType] = useState<'video' | 'audio'>('video');
 
   React.useEffect(() => {
@@ -49,7 +49,7 @@ export default function HeroUploader() {
         URL.revokeObjectURL(url);
       };
     } else {
-      setSourceMediaUrl('/media/podcast-sample.mp4');
+      setSourceMediaUrl('');
       setSourceMediaType('video');
     }
   }, [selectedFile]);
@@ -931,7 +931,7 @@ export default function HeroUploader() {
                             <span className="hidden xs:inline">Social</span>
                           </button>
                           <a
-                            href={`/api/export/render?clipId=${clip.id}&download=true&format=${aspectRatio}&startTime=${clip.startTime}&endTime=${clip.endTime}&sourceVideoUrl=${encodeURIComponent(sourceMediaUrl || '/media/podcast-sample.mp4')}&fitMode=fit`}
+                            href={`/api/export/render?clipId=${clip.id}&download=true&format=${aspectRatio}&startTime=${clip.startTime}&endTime=${clip.endTime}&sourceVideoUrl=${encodeURIComponent(sourceMediaUrl || '')}&fitMode=fit`}
                             download={`flowzora_${clip.id}_${aspectRatio.replace(':', 'x')}.mp4`}
                             className="flex items-center justify-center gap-1 rounded-md border border-[#262626] bg-[#111111] px-3 py-2 text-xs font-medium text-[#EDEDED] hover:border-[#383838] transition-colors min-h-[38px]"
                             title={`Download ${aspectRatio} MP4`}

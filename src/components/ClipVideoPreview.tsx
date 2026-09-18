@@ -33,7 +33,7 @@ export default function ClipVideoPreview({
   initialAspectRatio = '9:16',
   onScriptChange,
   onClose,
-  sourceMediaUrl = '/media/podcast-sample.mp4',
+  sourceMediaUrl = '',
   sourceMediaType = 'video',
 }: ClipVideoPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -566,7 +566,7 @@ export default function ClipVideoPreview({
           scriptPreference,
           format: aspectRatio,
           fitMode: framingMode,
-          sourceVideoUrl: sourceMediaUrl || '/media/podcast-sample.mp4',
+          sourceVideoUrl: sourceMediaUrl || '',
         }),
       });
 
@@ -651,7 +651,7 @@ export default function ClipVideoPreview({
                 onClick={togglePlay}
               >
                 {/* Ambient Blurred Background Video for studio-grade full visibility when in 'fit' mode */}
-                {previewMode === 'canvas' && framingMode === 'fit' && aspectRatio !== '16:9' && !isYouTube && (
+                {sourceMediaUrl && previewMode === 'canvas' && framingMode === 'fit' && aspectRatio !== '16:9' && !isYouTube && (
                   <video
                     ref={ambientVideoRef}
                     src={sourceMediaUrl}
@@ -670,7 +670,7 @@ export default function ClipVideoPreview({
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
                   />
-                ) : (
+                ) : sourceMediaUrl ? (
                   <video
                     ref={videoRef}
                     src={sourceMediaUrl}
@@ -686,6 +686,12 @@ export default function ClipVideoPreview({
                         : 'absolute inset-0 w-full h-full object-cover z-0'
                     } ${sourceMediaType === 'audio' ? 'opacity-0' : 'opacity-100'}`}
                   />
+                ) : (
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 text-center bg-[#0F111A]">
+                    <ScanFace className="h-10 w-10 text-[#9AA2B6] mb-2 opacity-50" />
+                    <p className="text-sm font-semibold text-white">No source video loaded</p>
+                    <p className="text-xs text-[#9AA2B6] mt-1">Please upload a media file or enter a YouTube URL to preview clips.</p>
+                  </div>
                 )}
 
                 {/* Audio-only Mode Fallback Waveform Visualizer */}
