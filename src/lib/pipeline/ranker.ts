@@ -90,6 +90,7 @@ export function dedupeAndRankCandidates(
     }
 
     const words = item.window.words ? item.window.words.filter((w) => w.end <= end + 0.05) : [];
+    const textSnippet = words.length > 0 ? words.map((w) => w.word).join(' ') : item.window.text;
 
     return {
       id: `ranked-clip-${idx + 1}`,
@@ -97,7 +98,7 @@ export function dedupeAndRankCandidates(
       startTime: start,
       endTime: end,
       duration: Number(dur.toFixed(2)),
-      transcriptSnippet: item.window.text,
+      transcriptSnippet: textSnippet,
       score: item.score,
       rank: idx + 1,
       aspectRatio: '9:16',

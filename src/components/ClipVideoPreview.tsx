@@ -57,26 +57,57 @@ export default function ClipVideoPreview({
   // Fallback: synthesize evenly-spaced relative timestamps from transcriptSnippet.
   const stableWords = React.useMemo(() => {
     const rawWords: any[] = (clip as any).words;
-    if (rawWords && rawWords.length > 0) {
-      return rawWords.map((w: any) => ({
-        ...w,
-        relStart: Math.max(0, Number(w.start) - clipStart),
-        relEnd:   Math.max(0, Number(w.end)   - clipStart),
-      }));
+    const snippetParts = (clip.transcriptSnippet || '').split(/\s+/).filter(Boolean);
+
+    // If rawWords exists and has a credible number of words (not an empty or 1-word stub)
+    const hasValidWords = Array.isArray(rawWords) && rawWords.length > 0;
+    const isTruncated = hasValidWords && snippetParts.length >= 6 && rawWords.length < Math.min(snippetParts.length * 0.4, 4);
+
+    if (hasValidWords && !isTruncated) {
+      const firstStart = Number(rawWords[0]?.start ?? 0);
+      // Auto-detect whether timestamps are absolute (relative to source media) or already relative to clipStart
+      const isAbsolute = clipStart > 2 && firstStart >= (clipStart - 1.5);
+      const offset = isAbsolute ? clipStart : 0;
+
+      // Map to relative timestamps, sanitize negative or NaN values, and sort chronologically
+      const mapped = rawWords
+        .map((w: any) => {
+          const rawStart = Number(w.start ?? 0);
+          const rawEnd = Number(w.end ?? rawStart + 0.3);
+          const s = Math.max(0, Number.isFinite(rawStart) ? rawStart - offset : 0);
+          const e = Math.max(s + 0.1, Number.isFinite(rawEnd) ? rawEnd - offset : s + 0.3);
+          return {
+            ...w,
+            relStart: Number(s.toFixed(2)),
+            relEnd: Number(e.toFixed(2)),
+          };
+        })
+        .sort((a: any, b: any) => a.relStart - b.relStart);
+
+      // Enforce monotonic non-decreasing progression and non-zero duration
+      for (let i = 1; i < mapped.length; i++) {
+        if (mapped[i].relStart < mapped[i - 1].relStart) {
+          mapped[i].relStart = mapped[i - 1].relStart;
+        }
+        if (mapped[i].relEnd <= mapped[i].relStart) {
+          mapped[i].relEnd = Number((mapped[i].relStart + 0.25).toFixed(2));
+        }
+      }
+
+      return mapped;
     }
-    // Synthetic fallback: distribute transcript words evenly across clipDuration
-    const parts = (clip.transcriptSnippet || '').split(/\s+/).filter(Boolean);
-    if (parts.length === 0) return [];
-    const step = clipDuration / parts.length;
-    return parts.map((w: string, i: number) => ({
+
+    // Synthetic fallback: distribute transcript snippet words evenly across clipDuration
+    if (snippetParts.length === 0) return [];
+    const step = clipDuration / snippetParts.length;
+    return snippetParts.map((w: string, i: number) => ({
       word: w,
       start: i * step,
-      end: (i + 1) * step,
+      end: (i + 0.9) * step,
       relStart: Number((i * step).toFixed(2)),
-      relEnd:   Number(((i + 1) * step).toFixed(2)),
+      relEnd: Number(((i + 0.9) * step).toFixed(2)),
     }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clip.id, clipStart, clipDuration]);
+  }, [clip.id, clipStart, clipDuration, (clip as any).words, clip.transcriptSnippet]);
 
   const isDevanagari = scriptPreference === 'devanagari';
 
@@ -274,40 +305,63 @@ export default function ClipVideoPreview({
   // Strictly non-overlapping contiguous time intervals so phrases switch cleanly.
   const phrases = React.useMemo(() => {
     if (!stableWords || stableWords.length === 0) return [];
-    const rawChunks: Array<{ words: any[]; start: number; end: number }> = [];
+    const rawChunks: Array<{ words: any[]; start: number; speechEnd: number }> = [];
     let chunk: any[] = [];
 
     for (let i = 0; i < stableWords.length; i++) {
       const w = stableWords[i];
       chunk.push(w);
 
-      const hasPunct  = /[.?!।,;:]\s*$/.test(w.word);
-      const hasPause  = i < stableWords.length - 1 && (stableWords[i + 1].relStart - w.relEnd >= 0.35);
-      const maxWords  = chunk.length >= 5;
-      const isLast    = i === stableWords.length - 1;
+      const hasPunct = /[.?!।,;:]\s*$/.test(w.word);
+      const nextWord = stableWords[i + 1];
+      const hasPause = nextWord && (nextWord.relStart - w.relEnd >= 0.35);
+      const maxWords = chunk.length >= 5;
+      const isLast = i === stableWords.length - 1;
 
       if (hasPunct || hasPause || maxWords || isLast) {
         rawChunks.push({
           words: chunk,
           start: chunk[0].relStart,
-          end: chunk[chunk.length - 1].relEnd,
+          speechEnd: chunk[chunk.length - 1].relEnd,
         });
         chunk = [];
       }
     }
 
-    // Ensure non-overlapping boundaries: each phrase ends where the next phrase starts.
-    // The last phrase extends until clipDuration so captions never go blank or freeze.
-    const result: Array<{ words: any[]; start: number; end: number }> = [];
+    // Assign clean display windows to each phrase:
+    // Transitions smoothly from phrase to phrase without blank flicker during speech,
+    // but naturally hides during prolonged pauses (>1.2s silence) or after speech concludes.
+    const result: Array<{
+      words: any[];
+      start: number;
+      speechEnd: number;
+      displayEnd: number;
+    }> = [];
+
     for (let i = 0; i < rawChunks.length; i++) {
       const current = rawChunks[i];
       const next = rawChunks[i + 1];
-      const phraseEnd = next ? next.start : clipDuration;
+
+      let displayEnd: number;
+      if (next) {
+        const pauseGap = next.start - current.speechEnd;
+        if (pauseGap > 1.2) {
+          displayEnd = Math.min(next.start, current.speechEnd + 0.8);
+        } else {
+          displayEnd = Math.max(current.speechEnd, next.start);
+        }
+      } else {
+        // Last phrase: lingers for up to 1.2s after last spoken word or until clip ends
+        displayEnd = Math.min(clipDuration, current.speechEnd + 1.2);
+      }
+
+      displayEnd = Math.max(current.start + 0.2, displayEnd);
 
       result.push({
         words: current.words,
         start: current.start,
-        end: phraseEnd,
+        speechEnd: current.speechEnd,
+        displayEnd,
       });
     }
 
@@ -327,16 +381,25 @@ export default function ClipVideoPreview({
   }, [isYouTube, isPlaying, clipDuration]);
 
   // Find the active caption phrase for current playback time.
-  // Guaranteed gapless: always active from 0 to clipDuration.
   const activePhrase = React.useMemo(() => {
     if (phrases.length === 0) return null;
-    if (currentTime < phrases[0].start) return phrases[0];
-    for (const p of phrases) {
-      if (currentTime >= p.start && currentTime < p.end) {
+
+    // Anticipation: show first phrase slightly before speech begins (0.4s)
+    if (currentTime < phrases[0].start) {
+      if (currentTime >= phrases[0].start - 0.4) return phrases[0];
+      return null;
+    }
+
+    for (let i = 0; i < phrases.length; i++) {
+      const p = phrases[i];
+      if (currentTime >= p.start && currentTime < p.displayEnd) {
         return p;
       }
     }
-    return phrases[phrases.length - 1];
+
+    // During silence between phrases or after speech concludes, hide caption box.
+    // Never fall back to phrases[phrases.length - 1] which caused subtitles to freeze mid-video.
+    return null;
   }, [phrases, currentTime]);
 
   const visibleWords = activePhrase ? activePhrase.words : [];
@@ -652,8 +715,12 @@ export default function ClipVideoPreview({
                       <div className="flex flex-wrap items-center justify-center gap-1 leading-snug">
                         {visibleWords.map((w: any, idx: number) => {
                           const nextW = visibleWords[idx + 1];
-                          const isCurrent = currentTime >= w.relStart && (nextW ? currentTime < nextW.relStart : true);
-                          const isPast = nextW ? currentTime >= nextW.relStart : false;
+                          const wordEnd = Math.max(w.relEnd, w.relStart + 0.15);
+                          // Decay/hold window: active word stays highlighted until next word starts, or for ~0.25s after wordEnd
+                          const activeCutoff = nextW ? Math.min(nextW.relStart, wordEnd + 0.2) : wordEnd + 0.25;
+
+                          const isCurrent = currentTime >= w.relStart && currentTime < activeCutoff;
+                          const isPast = currentTime >= activeCutoff;
                           const isUpcoming = currentTime < w.relStart;
                           const displayText = isDevanagari && w.devanagari ? w.devanagari : w.word;
 
@@ -662,7 +729,7 @@ export default function ClipVideoPreview({
                               key={idx}
                               className={`transition-all duration-100 font-bold inline-block ${
                                 isCurrent && !isUpcoming
-                                    ? 'text-[#10B981] scale-110 drop-shadow-[0_0_12px_rgba(16,185,129,0.95)] font-black'
+                                  ? 'text-[#10B981] scale-110 drop-shadow-[0_0_12px_rgba(16,185,129,0.95)] font-black'
                                   : isPast
                                   ? 'text-white'
                                   : 'text-white/60 font-medium'
