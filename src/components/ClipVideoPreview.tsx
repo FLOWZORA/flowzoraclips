@@ -65,8 +65,10 @@ export default function ClipVideoPreview({
 
     if (hasValidWords && !isTruncated) {
       const firstStart = Number(rawWords[0]?.start ?? 0);
-      // Auto-detect whether timestamps are absolute (relative to source media) or already relative to clipStart
-      const isAbsolute = clipStart > 0.2 && Math.abs(firstStart - clipStart) <= 3.0;
+      // Auto-detect whether timestamps are absolute (source media timestamps) or already relative to clipStart
+      const isAbsolute =
+        clipStart > 0.5 &&
+        (firstStart >= clipStart - 3.0 || firstStart > clipDuration);
       const offset = isAbsolute ? clipStart : 0;
 
       // Map to relative timestamps, sanitize negative or NaN values, and sort chronologically
@@ -308,6 +310,7 @@ export default function ClipVideoPreview({
 
 
   // Group words into natural subtitle phrases (punctuation / pause / max-5-word boundaries).
+  // Group words into natural subtitle phrases (smart chunking: 3–5 words, avoiding 1-word stubs).
   // Strictly non-overlapping contiguous time intervals so phrases switch cleanly.
   const phrases = React.useMemo(() => {
     if (!stableWords || stableWords.length === 0) return [];
@@ -319,15 +322,21 @@ export default function ClipVideoPreview({
       chunk.push(w);
 
       const wordText = (isDevanagari && w.devanagari) ? w.devanagari : w.word;
-      const hasPunct =
-        /[.?!।,;:|।॥…\u2026\u0964\u0965\-]\s*$/.test(wordText) ||
-        /[.?!।,;:]\s*$/.test(w.word);
+      const isSentenceEnd = /[.?!|।॥\u0964\u0965]\s*$/.test(wordText) || /[.?!]\s*$/.test(w.word);
+      const isClauseEnd = /[,;:…\u2026\-]\s*$/.test(wordText) || /[,;:]\s*$/.test(w.word);
       const nextWord = stableWords[i + 1];
-      const hasPause = nextWord && (nextWord.relStart - w.relEnd >= 0.28);
-      const maxWords = chunk.length >= 5;
+      const hasLongPause = nextWord && (nextWord.relStart - w.relEnd >= 0.55);
+      const hasBreathPause = nextWord && (nextWord.relStart - w.relEnd >= 0.28);
+
+      // Smart chunking: prevent 1-word stubs!
+      // Require at least 2 words before splitting on sentence/long pause, and at least 3 words before splitting on minor comma
+      const shouldSplitSentence = isSentenceEnd && chunk.length >= 2;
+      const shouldSplitClause = isClauseEnd && chunk.length >= 3;
+      const shouldSplitPause = (hasLongPause && chunk.length >= 2) || (hasBreathPause && chunk.length >= 3);
+      const maxWords = chunk.length >= 4;
       const isLast = i === stableWords.length - 1;
 
-      if (hasPunct || hasPause || maxWords || isLast) {
+      if (shouldSplitSentence || shouldSplitClause || shouldSplitPause || maxWords || isLast) {
         rawChunks.push({
           words: chunk,
           start: chunk[0].relStart,
@@ -338,8 +347,8 @@ export default function ClipVideoPreview({
     }
 
     // Assign clean display windows to each phrase:
-    // Strictly non-overlapping intervals (displayEnd <= next.start) so phrases switch cleanly.
-    // Transitions smoothly from phrase to phrase without blank flicker during speech.
+    // Continuous handoff: hold completed phrase until next phrase begins!
+    // Strictly non-overlapping intervals (displayEnd === next.start) so phrases switch cleanly without gaps.
     const result: Array<{
       words: any[];
       start: number;
@@ -354,15 +363,16 @@ export default function ClipVideoPreview({
       let displayEnd: number;
       if (next) {
         const pauseGap = next.start - current.speechEnd;
-        if (pauseGap > 0.9) {
-          displayEnd = Math.min(next.start, current.speechEnd + 0.45);
+        // If there's a prolonged silence (>1.6s dead air), close caption
+        if (pauseGap > 1.6) {
+          displayEnd = Math.min(next.start, current.speechEnd + 1.0);
         } else {
-          // Seamless handoff to next phrase, strictly non-overlapping
+          // Continuous handoff: hold completed phrase until next phrase begins!
           displayEnd = next.start;
         }
         displayEnd = Math.min(next.start, Math.max(current.start + 0.15, displayEnd));
       } else {
-        displayEnd = Math.min(clipDuration, current.speechEnd + 0.8);
+        displayEnd = Math.min(clipDuration, current.speechEnd + 1.0);
         displayEnd = Math.max(current.start + 0.15, displayEnd);
       }
 
@@ -393,29 +403,20 @@ export default function ClipVideoPreview({
   const activePhrase = React.useMemo(() => {
     if (phrases.length === 0) return null;
 
-    // Anticipation: show first phrase slightly before speech begins (0.45s)
-    if (currentTime < phrases[0].start) {
-      if (currentTime >= phrases[0].start - 0.45) return phrases[0];
-      return null;
-    }
-
     for (let i = 0; i < phrases.length; i++) {
       const p = phrases[i];
-      if (currentTime >= p.start && currentTime < p.displayEnd) {
+      const prevEnd = i > 0 ? phrases[i - 1].displayEnd : 0;
+      // Anticipation window: up to 0.4s before start if previous phrase already ended
+      const effectiveStart = i === 0 ? p.start - 0.5 : Math.max(prevEnd, p.start - 0.4);
+      if (currentTime >= effectiveStart && currentTime < p.displayEnd) {
         return p;
       }
     }
 
-    // Micro-gap bridging: if between phrases with silence < 0.35s, stay on preceding phrase
-    for (let i = 0; i < phrases.length - 1; i++) {
-      if (currentTime >= phrases[i].displayEnd && currentTime < phrases[i + 1].start) {
-        if (currentTime - phrases[i].speechEnd < 0.35) {
-          return phrases[i];
-        }
-        if (phrases[i + 1].start - currentTime < 0.25) {
-          return phrases[i + 1];
-        }
-      }
+    // If past all phrases but within 0.8s of the last phrase's displayEnd, keep the last phrase
+    const lastPhrase = phrases[phrases.length - 1];
+    if (currentTime >= lastPhrase.displayEnd && currentTime < lastPhrase.displayEnd + 0.8) {
+      return lastPhrase;
     }
 
     return null;
@@ -745,7 +746,7 @@ export default function ClipVideoPreview({
 
                           return (
                             <span
-                              key={idx}
+                              key={`${activePhrase?.start ?? 0}_${idx}_${w.relStart}`}
                               className={`transition-all duration-100 font-bold inline-block ${
                                 isCurrent && !isUpcoming
                                   ? 'text-[#10B981] scale-110 drop-shadow-[0_0_12px_rgba(16,185,129,0.95)] font-black'
