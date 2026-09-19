@@ -54,6 +54,15 @@ export default function ClipVideoPreview({
   const [currentTime, setCurrentTime] = useState(0); // relative time: 0 to clipDuration
   const [showUnmuteHint, setShowUnmuteHint] = useState(false);
 
+  // Scrubber / Slider state and sync refs
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubTime, setScrubTime] = useState<number | null>(null);
+  const isScrubbingRef = useRef(false);
+  const isSeekingOrLoopingRef = useRef(false);
+  const seekCooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastReportedTimeRef = useRef(0);
+  const latestYtTimeRef = useRef(0);
+
   const clipStart = Math.max(0, clip.startTime || 0);
   const rawDuration = clip.duration || ((clip.endTime || 0) - clipStart) || 15;
   const clipDuration = Math.min(35, Math.max(1, rawDuration));
@@ -194,12 +203,22 @@ export default function ClipVideoPreview({
                 if (event.data === 1) setIsPlaying(true);
                 if (event.data === 2) setIsPlaying(false);
                 if (event.data === 0) {
-                  try {
-                    event.target.seekTo(clipStart, true);
-                    event.target.playVideo();
-                    setCurrentTime(0);
-                    setIsPlaying(true);
-                  } catch (_) {}
+                  // Loop smoothly back to clip start
+                  if (!isSeekingOrLoopingRef.current && !isScrubbingRef.current) {
+                    isSeekingOrLoopingRef.current = true;
+                    try {
+                      event.target.seekTo(clipStart, true);
+                      event.target.playVideo();
+                      setCurrentTime(0);
+                      lastReportedTimeRef.current = 0;
+                      latestYtTimeRef.current = clipStart;
+                      setIsPlaying(true);
+                    } catch (_) {}
+                    if (seekCooldownTimerRef.current) clearTimeout(seekCooldownTimerRef.current);
+                    seekCooldownTimerRef.current = setTimeout(() => {
+                      isSeekingOrLoopingRef.current = false;
+                    }, 500);
+                  }
                 }
               },
             },
@@ -237,9 +256,9 @@ export default function ClipVideoPreview({
         ytPlayerRef.current = null;
       }
     };
-  }, [isYouTube, ytVideoId, clip.id, clipStart, clipEnd]);
+  }, [isYouTube, ytVideoId, clip.id, clipStart]);
 
-  // Real-time postMessage listener from YouTube iframe for live timestamp sync & state updates
+  // Real-time postMessage listener from YouTube iframe for state updates (play, pause, mute, latest time)
   useEffect(() => {
     if (!isYouTube) return;
 
@@ -248,15 +267,7 @@ export default function ClipVideoPreview({
         const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
         if (data && data.event === 'infoDelivery' && data.info) {
           if (typeof data.info.currentTime === 'number') {
-            const raw = data.info.currentTime;
-            if (raw >= clipEnd - 0.08) {
-              sendYtCommand('seekTo', [clipStart, true]);
-              sendYtCommand('playVideo');
-              setCurrentTime(0);
-            } else {
-              const rel = Math.max(0, Math.min(clipDuration, raw - clipStart));
-              setCurrentTime(Number(rel.toFixed(2)));
-            }
+            latestYtTimeRef.current = data.info.currentTime;
           }
           if (typeof data.info.playerState === 'number') {
             if (data.info.playerState === 1) setIsPlaying(true);
@@ -271,34 +282,71 @@ export default function ClipVideoPreview({
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [isYouTube, clipStart, clipEnd, clipDuration]);
+  }, [isYouTube]);
 
-  // 60 FPS continuous time synchronization loop for YouTube
+  // Throttled time synchronization loop for YouTube with loop-lock protection
   useEffect(() => {
     if (!isYouTube || !isPlaying) return;
 
     let animId: number;
-    const syncLoop = () => {
-      if (ytPlayerRef.current && typeof ytPlayerRef.current.getCurrentTime === 'function') {
-        try {
-          const raw = ytPlayerRef.current.getCurrentTime();
-          if (typeof raw === 'number' && !isNaN(raw) && raw > 0) {
-            if (raw >= clipEnd - 0.08) {
-              ytPlayerRef.current.seekTo(clipStart, true);
-              ytPlayerRef.current.playVideo();
-              setCurrentTime(0);
+    let lastCheck = 0;
+
+    const syncLoop = (timestamp: number) => {
+      if (timestamp - lastCheck >= 30) {
+        lastCheck = timestamp;
+
+        if (!isScrubbingRef.current) {
+          let raw = 0;
+          if (ytPlayerRef.current && typeof ytPlayerRef.current.getCurrentTime === 'function') {
+            try {
+              const t = ytPlayerRef.current.getCurrentTime();
+              if (typeof t === 'number' && !isNaN(t) && t > 0) raw = t;
+            } catch (_) {}
+          }
+          if (raw === 0 && latestYtTimeRef.current > 0) {
+            raw = latestYtTimeRef.current;
+          }
+
+          if (raw > 0) {
+            if (isSeekingOrLoopingRef.current) {
+              // Clear cooldown lock once player time is near clipStart
+              if (raw <= clipStart + 0.8 && raw >= Math.max(0, clipStart - 1.0)) {
+                isSeekingOrLoopingRef.current = false;
+                if (seekCooldownTimerRef.current) clearTimeout(seekCooldownTimerRef.current);
+              }
             } else {
-              const rel = Math.max(0, Math.min(clipDuration, raw - clipStart));
-              setCurrentTime(Number(rel.toFixed(2)));
+              // Check loop condition
+              if (raw >= clipEnd - 0.12) {
+                isSeekingOrLoopingRef.current = true;
+                sendYtCommand('seekTo', [clipStart, true]);
+                sendYtCommand('playVideo');
+                setCurrentTime(0);
+                lastReportedTimeRef.current = 0;
+                latestYtTimeRef.current = clipStart;
+
+                if (seekCooldownTimerRef.current) clearTimeout(seekCooldownTimerRef.current);
+                seekCooldownTimerRef.current = setTimeout(() => {
+                  isSeekingOrLoopingRef.current = false;
+                }, 500);
+              } else {
+                const rel = Math.max(0, Math.min(clipDuration, raw - clipStart));
+                if (Math.abs(rel - lastReportedTimeRef.current) >= 0.04) {
+                  lastReportedTimeRef.current = rel;
+                  setCurrentTime(Number(rel.toFixed(2)));
+                }
+              }
             }
           }
-        } catch (_) {}
+        }
       }
       animId = requestAnimationFrame(syncLoop);
     };
 
     animId = requestAnimationFrame(syncLoop);
-    return () => cancelAnimationFrame(animId);
+    return () => {
+      cancelAnimationFrame(animId);
+      if (seekCooldownTimerRef.current) clearTimeout(seekCooldownTimerRef.current);
+    };
   }, [isYouTube, isPlaying, clipStart, clipEnd, clipDuration]);
 
   // Synchronize HTML5 video playback
@@ -357,33 +405,46 @@ export default function ClipVideoPreview({
     };
   }, [clip.id, sourceMediaUrl, clipStart]);
 
-  // 60 FPS continuous time synchronization with HTML5 video
+  // Throttled time synchronization with HTML5 video
   useEffect(() => {
     const video = videoRef.current;
     if (!video || isYouTube) return;
 
     let animId: number;
-    const syncTime = () => {
-      if (video && !video.paused && !video.ended) {
-        const vDur = video.duration || 0;
-        const startPos = vDur > 0 && clipStart < vDur ? clipStart : 0;
-        const endPos = vDur > 0 ? Math.min(vDur, clipEnd > startPos ? clipEnd : startPos + clipDuration) : (clipStart + clipDuration);
+    let lastCheck = 0;
+    const syncTime = (timestamp: number) => {
+      if (timestamp - lastCheck >= 30) {
+        lastCheck = timestamp;
+        if (video && !video.paused && !video.ended && !isScrubbingRef.current) {
+          const vDur = video.duration || 0;
+          const startPos = vDur > 0 && clipStart < vDur ? clipStart : 0;
+          const endPos = vDur > 0 ? Math.min(vDur, clipEnd > startPos ? clipEnd : startPos + clipDuration) : (clipStart + clipDuration);
 
-        // Seamless loop when reaching clipEnd
-        if (vDur > 0 && video.currentTime >= endPos - 0.06) {
-          video.currentTime = startPos;
-          if (ambientVideoRef.current) ambientVideoRef.current.currentTime = startPos;
-          setCurrentTime(0);
-          video.play().catch(() => {});
-          if (ambientVideoRef.current) ambientVideoRef.current.play().catch(() => {});
-        } else {
-          const rel = Math.max(0, video.currentTime - startPos);
-          setCurrentTime(rel);
-          if (ambientVideoRef.current && Math.abs(ambientVideoRef.current.currentTime - video.currentTime) > 0.3) {
-            ambientVideoRef.current.currentTime = video.currentTime;
-          }
-          if (ambientVideoRef.current && ambientVideoRef.current.paused && !video.paused) {
-            ambientVideoRef.current.play().catch(() => {});
+          if (isSeekingOrLoopingRef.current) {
+            if (video.currentTime <= startPos + 0.5) {
+              isSeekingOrLoopingRef.current = false;
+            }
+          } else if (vDur > 0 && video.currentTime >= endPos - 0.08) {
+            isSeekingOrLoopingRef.current = true;
+            video.currentTime = startPos;
+            if (ambientVideoRef.current) ambientVideoRef.current.currentTime = startPos;
+            setCurrentTime(0);
+            lastReportedTimeRef.current = 0;
+            video.play().catch(() => {});
+            if (ambientVideoRef.current) ambientVideoRef.current.play().catch(() => {});
+            setTimeout(() => { isSeekingOrLoopingRef.current = false; }, 400);
+          } else {
+            const rel = Math.max(0, video.currentTime - startPos);
+            if (Math.abs(rel - lastReportedTimeRef.current) >= 0.04) {
+              lastReportedTimeRef.current = rel;
+              setCurrentTime(rel);
+            }
+            if (ambientVideoRef.current && Math.abs(ambientVideoRef.current.currentTime - video.currentTime) > 0.3) {
+              ambientVideoRef.current.currentTime = video.currentTime;
+            }
+            if (ambientVideoRef.current && ambientVideoRef.current.paused && !video.paused) {
+              ambientVideoRef.current.play().catch(() => {});
+            }
           }
         }
       }
@@ -393,27 +454,6 @@ export default function ClipVideoPreview({
     animId = requestAnimationFrame(syncTime);
     return () => cancelAnimationFrame(animId);
   }, [clip.id, clipStart, clipEnd, clipDuration, isYouTube, isPlaying]);
-
-  const handleTimeUpdate = () => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const vDur = video.duration || 0;
-    const startPos = vDur > 0 && clipStart < vDur ? clipStart : 0;
-    const endPos = vDur > 0 ? Math.min(vDur, clipEnd > startPos ? clipEnd : startPos + clipDuration) : (clipStart + clipDuration);
-
-    if (vDur > 0 && video.currentTime >= endPos - 0.06) {
-      video.currentTime = startPos;
-      if (ambientVideoRef.current) ambientVideoRef.current.currentTime = startPos;
-      setCurrentTime(0);
-      video.play().catch(() => {});
-      if (ambientVideoRef.current) ambientVideoRef.current.play().catch(() => {});
-      return;
-    }
-
-    const rel = Math.max(0, video.currentTime - startPos);
-    setCurrentTime(rel);
-  };
 
   const togglePlay = () => {
     if (isYouTube) {
@@ -472,10 +512,19 @@ export default function ClipVideoPreview({
   };
 
   const handleRestart = () => {
+    isSeekingOrLoopingRef.current = true;
+    if (seekCooldownTimerRef.current) clearTimeout(seekCooldownTimerRef.current);
+    seekCooldownTimerRef.current = setTimeout(() => {
+      isSeekingOrLoopingRef.current = false;
+    }, 500);
+
+    setCurrentTime(0);
+    lastReportedTimeRef.current = 0;
+    latestYtTimeRef.current = clipStart;
+
     if (isYouTube) {
       sendYtCommand('seekTo', [clipStart, true]);
       sendYtCommand('playVideo');
-      setCurrentTime(0);
       setIsPlaying(true);
       return;
     }
@@ -487,7 +536,6 @@ export default function ClipVideoPreview({
     const startPos = clipStart < vDur ? clipStart : 0;
     video.currentTime = startPos;
     if (ambientVideoRef.current) ambientVideoRef.current.currentTime = startPos;
-    setCurrentTime(0);
     video
       .play()
       .then(() => {
@@ -497,14 +545,24 @@ export default function ClipVideoPreview({
       .catch(() => {});
   };
 
-  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const targetRel = ratio * clipDuration;
+  const handleSeekCommit = (targetRel: number) => {
+    const clampedRel = Math.max(0, Math.min(clipDuration, targetRel));
+    setCurrentTime(Number(clampedRel.toFixed(2)));
+    lastReportedTimeRef.current = clampedRel;
+
+    // Lock automatic time sync for 450ms so player doesn't snap back to old time while seeking
+    isSeekingOrLoopingRef.current = true;
+    if (seekCooldownTimerRef.current) clearTimeout(seekCooldownTimerRef.current);
+    seekCooldownTimerRef.current = setTimeout(() => {
+      isSeekingOrLoopingRef.current = false;
+    }, 450);
 
     if (isYouTube) {
-      sendYtCommand('seekTo', [clipStart + targetRel, true]);
-      setCurrentTime(Number(targetRel.toFixed(2)));
+      latestYtTimeRef.current = clipStart + clampedRel;
+      sendYtCommand('seekTo', [clipStart + clampedRel, true]);
+      if (isPlaying) {
+        sendYtCommand('playVideo');
+      }
       return;
     }
 
@@ -513,9 +571,71 @@ export default function ClipVideoPreview({
 
     const vDur = video.duration || 0;
     const startPos = clipStart < vDur ? clipStart : 0;
+    video.currentTime = startPos + clampedRel;
+    if (ambientVideoRef.current) {
+      ambientVideoRef.current.currentTime = startPos + clampedRel;
+    }
+    if (isPlaying && video.paused) {
+      video.play().catch(() => {});
+    }
+  };
 
-    video.currentTime = startPos + targetRel;
-    setCurrentTime(targetRel);
+  const calcRelativeTimeFromPointer = (clientX: number, target: HTMLElement): number => {
+    const rect = target.getBoundingClientRect();
+    if (rect.width <= 0) return 0;
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    return ratio * clipDuration;
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (_) {}
+    isScrubbingRef.current = true;
+    setIsScrubbing(true);
+    const newTime = calcRelativeTimeFromPointer(e.clientX, e.currentTarget);
+    setScrubTime(newTime);
+    setCurrentTime(Number(newTime.toFixed(2)));
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isScrubbingRef.current) return;
+    e.stopPropagation();
+    const newTime = calcRelativeTimeFromPointer(e.clientX, e.currentTarget);
+    setScrubTime(newTime);
+    setCurrentTime(Number(newTime.toFixed(2)));
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isScrubbingRef.current) return;
+    e.stopPropagation();
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch (_) {}
+    const finalTime = calcRelativeTimeFromPointer(e.clientX, e.currentTarget);
+    isScrubbingRef.current = false;
+    setIsScrubbing(false);
+    setScrubTime(null);
+    handleSeekCommit(finalTime);
+  };
+
+  const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isScrubbingRef.current) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch (_) {}
+    isScrubbingRef.current = false;
+    setIsScrubbing(false);
+    setScrubTime(null);
+  };
+
+  const formatTime = (seconds: number) => {
+    const clamped = Math.max(0, seconds);
+    const m = Math.floor(clamped / 60);
+    const s = Math.floor(clamped % 60);
+    const tenths = Math.floor((clamped % 1) * 10);
+    return `${m}:${s < 10 ? '0' : ''}${s}.${tenths}`;
   };
 
 
@@ -599,6 +719,9 @@ export default function ClipVideoPreview({
 
 
 
+  const effectiveCurrentTime = isScrubbing && scrubTime !== null ? scrubTime : currentTime;
+  const progressPercent = Math.min(100, Math.max(0, (effectiveCurrentTime / clipDuration) * 100));
+
   // Find the active caption phrase for current playback time.
   const activePhrase = React.useMemo(() => {
     if (phrases.length === 0) return null;
@@ -608,27 +731,26 @@ export default function ClipVideoPreview({
       const prevEnd = i > 0 ? phrases[i - 1].displayEnd : 0;
       // Anticipation window: up to 0.4s before start if previous phrase already ended
       const effectiveStart = i === 0 ? p.start - 0.5 : Math.max(prevEnd, p.start - 0.4);
-      if (currentTime >= effectiveStart && currentTime < p.displayEnd) {
+      if (effectiveCurrentTime >= effectiveStart && effectiveCurrentTime < p.displayEnd) {
         return p;
       }
     }
 
     // If past all phrases but within 0.8s of the last phrase's displayEnd, keep the last phrase
     const lastPhrase = phrases[phrases.length - 1];
-    if (currentTime >= lastPhrase.displayEnd && currentTime < lastPhrase.displayEnd + 0.8) {
+    if (effectiveCurrentTime >= lastPhrase.displayEnd && effectiveCurrentTime < lastPhrase.displayEnd + 0.8) {
       return lastPhrase;
     }
 
     return null;
-  }, [phrases, currentTime]);
+  }, [phrases, effectiveCurrentTime]);
 
   const visibleWords = activePhrase ? activePhrase.words : [];
-
 
   // Simulated scene-aware speaker status (e.g. middle segment demonstrating slide/b-roll fallback)
   const isFallbackSegment =
     clip.reframeFallbackUsed ||
-    (currentTime > clipDuration * 0.4 && currentTime < clipDuration * 0.65);
+    (effectiveCurrentTime > clipDuration * 0.4 && effectiveCurrentTime < clipDuration * 0.65);
 
   // Preview mode: 'canvas' shows the platform target canvas (9:16 phone simulator by default).
   // 'full' shows complete 16:9 widescreen video with zero blank space.
@@ -860,7 +982,7 @@ export default function ClipVideoPreview({
                   <iframe
                     ref={ytIframeRef}
                     id="flowzora-yt-iframe"
-                    src={`https://www.youtube.com/embed/${ytVideoId}?enablejsapi=1&autoplay=1&start=${Math.floor(clipStart)}&end=${Math.ceil(clipEnd)}&controls=0&modestbranding=1&rel=0&playsinline=1&widgetid=1`}
+                    src={`https://www.youtube.com/embed/${ytVideoId}?enablejsapi=1&autoplay=1&start=${Math.floor(clipStart)}&controls=0&modestbranding=1&rel=0&playsinline=1&iv_load_policy=3&widgetid=1`}
                     className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
@@ -878,7 +1000,6 @@ export default function ClipVideoPreview({
                     src={sourceMediaUrl}
                     playsInline
                     preload="auto"
-                    onTimeUpdate={handleTimeUpdate}
                     onEnded={handleRestart}
                     className={`transition-opacity duration-300 ${
                       previewMode === 'full'
@@ -906,7 +1027,7 @@ export default function ClipVideoPreview({
                           className="w-1.5 bg-[#10B981] rounded-full transition-all duration-150"
                           style={{
                             height: isPlaying
-                              ? `${15 + ((i * 19 + Math.round(currentTime * 10)) % 65)}px`
+                              ? `${15 + ((i * 19 + Math.round(effectiveCurrentTime * 10)) % 65)}px`
                               : '8px',
                           }}
                         />
@@ -955,9 +1076,9 @@ export default function ClipVideoPreview({
                           // Smooth continuous karaoke transition: active word hands off to next word, or turns white after speaking
                           const activeEnd = nextW ? Math.min(nextW.relStart, wordEnd + 0.35) : wordEnd + 0.35;
 
-                          const isCurrent = currentTime >= w.relStart && currentTime < activeEnd;
-                          const isPast = currentTime >= activeEnd;
-                          const isUpcoming = currentTime < w.relStart;
+                          const isCurrent = effectiveCurrentTime >= w.relStart && effectiveCurrentTime < activeEnd;
+                          const isPast = effectiveCurrentTime >= activeEnd;
+                          const isUpcoming = effectiveCurrentTime < w.relStart;
                           const displayText = isDevanagari && w.devanagari ? w.devanagari : w.word;
 
                           return (
@@ -980,20 +1101,22 @@ export default function ClipVideoPreview({
                   </div>
                 )}
 
-                {/* Audio/Video Scrubber Bar */}
+                {/* On-Video Audio/Video Scrubber Bar */}
                 <div
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSeek(e);
-                  }}
-                  className="absolute bottom-0 left-0 right-0 h-1.5 bg-white/20 cursor-pointer hover:h-2.5 transition-all z-20 group/bar"
-                  title="Click to scrub"
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onPointerCancel={handlePointerCancel}
+                  className="absolute bottom-0 left-0 right-0 h-4 -mb-1 flex items-end cursor-pointer touch-none z-30 group/bar select-none"
+                  title="Click or drag to scrub video"
                 >
-                  <div
-                    className="h-full bg-[#10B981] transition-all duration-75 relative"
-                    style={{ width: `${Math.min(100, (currentTime / clipDuration) * 100)}%` }}
-                  >
-                    <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 bg-white rounded-full shadow opacity-0 group-hover/bar:opacity-100 transition-opacity" />
+                  <div className="w-full h-1.5 bg-white/20 group-hover/bar:h-2.5 transition-all relative">
+                    <div
+                      className="h-full bg-[#10B981] relative"
+                      style={{ width: `${progressPercent}%` }}
+                    >
+                      <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-2.5 h-2.5 bg-white rounded-full shadow border border-[#10B981] opacity-0 group-hover/bar:opacity-100 transition-opacity" />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1184,6 +1307,51 @@ export default function ClipVideoPreview({
 
             {/* Bottom Player Controls & Export */}
             <div className="mt-2 pt-2 border-t border-[#242938]">
+              {/* Interactive Timeline Video Slider */}
+              <div className="mb-2 bg-[#0A0B10] p-2 rounded-xl border border-[#2B3040]">
+                <div className="flex items-center justify-between text-[10px] font-mono mb-1.5 select-none">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[#10B981] font-bold tabular-nums">
+                      {formatTime(effectiveCurrentTime)}
+                    </span>
+                    <span className="text-[#626B82]">/</span>
+                    <span className="text-[#9AA2B6] tabular-nums">
+                      {formatTime(clipDuration)}
+                    </span>
+                  </div>
+                  <span className={`text-[9px] uppercase tracking-wider font-semibold ${
+                    isScrubbing ? 'text-[#F59E0B]' : isPlaying ? 'text-[#10B981]' : 'text-[#9AA2B6]'
+                  }`}>
+                    {isScrubbing ? 'Seeking...' : isPlaying ? 'Playing' : 'Paused'}
+                  </span>
+                </div>
+
+                {/* Slider track with pointer events */}
+                <div
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onPointerCancel={handlePointerCancel}
+                  className="relative h-5 flex items-center cursor-pointer touch-none select-none group"
+                  title="Drag or click to seek video"
+                >
+                  {/* Track background */}
+                  <div className="w-full h-1.5 rounded-full bg-[#1E2230] group-hover:h-2 transition-all relative overflow-hidden border border-white/5">
+                    {/* Active progress */}
+                    <div
+                      className="h-full bg-gradient-to-r from-[#10B981] to-[#34D399] rounded-full"
+                      style={{ width: `${progressPercent}%` }}
+                    />
+                  </div>
+
+                  {/* Draggable thumb */}
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-white shadow-[0_0_10px_rgba(16,185,129,0.9)] border-2 border-[#10B981] group-hover:scale-125 transition-transform"
+                    style={{ left: `${progressPercent}%` }}
+                  />
+                </div>
+              </div>
+
               <div className="flex items-center justify-center gap-2.5 mb-2.5">
                 <button
                   type="button"
@@ -1214,7 +1382,7 @@ export default function ClipVideoPreview({
                   )}
                 </button>
                 <div className="text-[11px] text-[#9AA2B6] tabular-nums font-medium font-mono">
-                  {currentTime.toFixed(1)}s / {clipDuration.toFixed(1)}s
+                  {effectiveCurrentTime.toFixed(1)}s / {clipDuration.toFixed(1)}s
                 </div>
               </div>
 
