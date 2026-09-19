@@ -141,7 +141,7 @@ export async function getYouTubeMetadata(url: string, durationSecEstimate: numbe
 /**
  * Direct VisionOS metadata resolver to bypass age-gates & login requirements
  */
-async function getMetadataViaVisionOS(videoId: string): Promise<{ title?: string; author?: string; durationSec?: number } | null> {
+async function fetchYouTubeSession(): Promise<{ cookieHeader: string; visitorData: string }> {
   try {
     const pageRes = await fetch('https://www.youtube.com/', {
       headers: {
@@ -150,8 +150,19 @@ async function getMetadataViaVisionOS(videoId: string): Promise<{ title?: string
       },
     });
     const pageHtml = await pageRes.text();
+    const rawCookies = pageRes.headers.getSetCookie ? pageRes.headers.getSetCookie() : [];
+    const cookieHeader = rawCookies.map((c) => c.split(';')[0]).join('; ');
     const visitorMatch = pageHtml.match(/"VISITOR_DATA":\s*"([^"]+)"/);
     const visitorData = visitorMatch ? visitorMatch[1] : '';
+    return { cookieHeader, visitorData };
+  } catch (_) {
+    return { cookieHeader: '', visitorData: '' };
+  }
+}
+
+async function getMetadataViaVisionOS(videoId: string): Promise<{ title?: string; author?: string; durationSec?: number } | null> {
+  try {
+    const { cookieHeader, visitorData } = await fetchYouTubeSession();
 
     const payload = {
       context: {
@@ -188,6 +199,7 @@ async function getMetadataViaVisionOS(videoId: string): Promise<{ title?: string
         'X-Youtube-Client-Version': '1.02',
         'Origin': 'https://www.youtube.com',
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
         ...(visitorData ? { 'X-Goog-Visitor-Id': visitorData } : {}),
       },
       body: JSON.stringify(payload),
@@ -221,18 +233,7 @@ async function extractViaVisionOS(
   metadata?: Partial<YouTubeVideoMetadata>;
 } | null> {
   try {
-    const pageRes = await fetch('https://www.youtube.com/', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    });
-    const pageHtml = await pageRes.text();
-    const rawCookies = pageRes.headers.getSetCookie ? pageRes.headers.getSetCookie() : [];
-    const cookieHeader = rawCookies.map((c) => c.split(';')[0]).join('; ');
-
-    const visitorMatch = pageHtml.match(/"VISITOR_DATA":\s*"([^"]+)"/);
-    const visitorData = visitorMatch ? visitorMatch[1] : '';
+    const { cookieHeader, visitorData } = await fetchYouTubeSession();
 
     const payload = {
       context: {
