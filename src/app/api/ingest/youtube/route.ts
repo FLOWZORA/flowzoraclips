@@ -15,6 +15,9 @@ import { checkSpendKillSwitch, recordApiSpend } from '@/lib/billing/kill-switch'
 
 // Allow up to 60s runtime for audio streaming, Groq transcription & Gemini highlight ranking
 export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+export const revalidate = 0;
 
 /**
  * GET: Quick metadata preview when user enters a YouTube URL.

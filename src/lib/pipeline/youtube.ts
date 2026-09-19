@@ -148,6 +148,7 @@ async function fetchYouTubeSession(): Promise<{ cookieHeader: string; visitorDat
   try {
     const vRes = await fetch('https://www.youtube.com/youtubei/v1/visitor_id', {
       method: 'POST',
+      cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -187,6 +188,7 @@ async function fetchYouTubeSession(): Promise<{ cookieHeader: string; visitorDat
   // Strategy 2: Fallback to scraping youtube.com root HTML
   try {
     const pageRes = await fetch('https://www.youtube.com/', {
+      cache: 'no-store',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9',
@@ -226,6 +228,7 @@ async function getMetadataViaVisionOS(videoId: string): Promise<{ title?: string
           osName: 'visionOS',
           osVersion: '26.5.23O471',
           hl: 'en',
+          gl: 'US',
           timeZone: 'UTC',
           utcOffsetMinutes: 0,
           visitorData: visitorData || undefined,
@@ -244,6 +247,7 @@ async function getMetadataViaVisionOS(videoId: string): Promise<{ title?: string
 
     const res = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
       method: 'POST',
+      cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
         'X-Youtube-Client-Name': '101',
@@ -300,6 +304,7 @@ async function extractViaVisionOS(
           osName: 'visionOS',
           osVersion: '26.5.23O471',
           hl: 'en',
+          gl: 'US',
           timeZone: 'UTC',
           utcOffsetMinutes: 0,
           visitorData: visitorData || undefined,
@@ -318,6 +323,7 @@ async function extractViaVisionOS(
 
     const playerRes = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
       method: 'POST',
+      cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
         'X-Youtube-Client-Name': '101',
@@ -350,6 +356,7 @@ async function extractViaVisionOS(
     // Cap audio at 18 MB (~25 minutes of speech) to ensure it stays well within Groq's 25MB limit
     const MAX_BYTES = 18 * 1024 * 1024;
     const audioRes = await fetch(selectedFormat.url, {
+      cache: 'no-store',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
         'Range': `bytes=0-${MAX_BYTES}`,
