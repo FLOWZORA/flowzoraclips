@@ -387,19 +387,72 @@ export default function ClipVideoPreview({
     };
   }, [isYouTube, isPlaying, clipStart, clipEnd, clipDuration]);
 
-  // Synchronize HTML5 video playback
+  // Helper function to sync HTML5 video progress with relative clip timeline
+  const syncVideoProgress = (video: HTMLVideoElement) => {
+    if (isScrubbingRef.current) return;
+
+    const vDur = video.duration || 0;
+    const startPos = vDur > 0 && clipStart < vDur ? clipStart : 0;
+    const endPos = vDur > 0
+      ? Math.min(vDur, clipEnd > startPos ? clipEnd : startPos + clipDuration)
+      : (clipStart + clipDuration);
+
+    // Loop at end of highlight clip
+    if (vDur > 0 && endPos > startPos && video.currentTime >= endPos - 0.08) {
+      video.currentTime = startPos;
+      if (ambientVideoRef.current) ambientVideoRef.current.currentTime = startPos;
+      setCurrentTime(0);
+      lastReportedTimeRef.current = 0;
+      video.play().catch(() => {});
+      if (ambientVideoRef.current) ambientVideoRef.current.play().catch(() => {});
+      return;
+    }
+
+    // Relative progression calculation:
+    // If video is playing after startPos, relative is (currentTime - startPos).
+    // If video is playing from beginning (< startPos), relative is currentTime directly.
+    let rel = 0;
+    if (startPos > 0 && video.currentTime >= startPos - 0.1) {
+      rel = video.currentTime - startPos;
+    } else {
+      rel = video.currentTime;
+    }
+    const clampedRel = Math.max(0, Math.min(clipDuration, rel));
+
+    if (Math.abs(clampedRel - lastReportedTimeRef.current) >= 0.03) {
+      lastReportedTimeRef.current = clampedRel;
+      setCurrentTime(Number(clampedRel.toFixed(2)));
+    }
+
+    // Keep ambient video in sync
+    if (ambientVideoRef.current) {
+      if (Math.abs(ambientVideoRef.current.currentTime - video.currentTime) > 0.3) {
+        ambientVideoRef.current.currentTime = video.currentTime;
+      }
+      if (ambientVideoRef.current.paused && !video.paused) {
+        ambientVideoRef.current.play().catch(() => {});
+      } else if (!ambientVideoRef.current.paused && video.paused) {
+        ambientVideoRef.current.pause();
+      }
+    }
+  };
+
+  // Synchronize HTML5 video playback initialization & start position
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || isYouTube) return;
 
     let active = true;
 
     const setupMedia = () => {
       if (!active) return;
       const duration = video.duration || 0;
-      const startPos = clipStart < duration ? clipStart : 0;
-      video.currentTime = startPos;
+      const startPos = duration > 0 && clipStart < duration ? clipStart : 0;
+      if (startPos > 0 && Math.abs(video.currentTime - startPos) > 0.5) {
+        try { video.currentTime = startPos; } catch (_) {}
+      }
       setCurrentTime(0);
+      lastReportedTimeRef.current = 0;
 
       // Attempt unmuted play first
       video.muted = false;
@@ -433,6 +486,7 @@ export default function ClipVideoPreview({
     };
 
     video.addEventListener('loadedmetadata', setupMedia);
+    video.addEventListener('canplay', setupMedia, { once: true });
     if (video.readyState >= 1) {
       setupMedia();
     }
@@ -440,66 +494,22 @@ export default function ClipVideoPreview({
     return () => {
       active = false;
       video.removeEventListener('loadedmetadata', setupMedia);
+      video.removeEventListener('canplay', setupMedia);
     };
-  }, [clip.id, sourceMediaUrl, clipStart]);
+  }, [clip.id, sourceMediaUrl, clipStart, isYouTube]);
 
-  // Throttled time synchronization with HTML5 video
+  // Continuous 60fps time synchronization with HTML5 video
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video || isYouTube) return;
+    if (isYouTube) return;
 
     let animId: number;
     let lastCheck = 0;
     const syncTime = (timestamp: number) => {
-      if (timestamp - lastCheck >= 30) {
+      if (timestamp - lastCheck >= 25) {
         lastCheck = timestamp;
+        const video = videoRef.current;
         if (video && !video.paused && !video.ended && !isScrubbingRef.current) {
-          const vDur = video.duration || 0;
-          const startPos = vDur > 0 && clipStart < vDur ? clipStart : 0;
-          const endPos = vDur > 0 ? Math.min(vDur, clipEnd > startPos ? clipEnd : startPos + clipDuration) : (clipStart + clipDuration);
-
-          if (isSeekingRef.current && targetSeekPosRef.current !== null) {
-            if (Math.abs(video.currentTime - targetSeekPosRef.current) <= 0.4) {
-              isSeekingRef.current = false;
-              targetSeekPosRef.current = null;
-            } else {
-              animId = requestAnimationFrame(syncTime);
-              return;
-            }
-          }
-
-          if (isLoopingRef.current) {
-            if (video.currentTime <= startPos + 0.4) {
-              isLoopingRef.current = false;
-            } else {
-              animId = requestAnimationFrame(syncTime);
-              return;
-            }
-          }
-
-          if (vDur > 0 && video.currentTime >= endPos - 0.08) {
-            isLoopingRef.current = true;
-            video.currentTime = startPos;
-            if (ambientVideoRef.current) ambientVideoRef.current.currentTime = startPos;
-            setCurrentTime(0);
-            lastReportedTimeRef.current = 0;
-            video.play().catch(() => {});
-            if (ambientVideoRef.current) ambientVideoRef.current.play().catch(() => {});
-            if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
-            loopTimeoutRef.current = setTimeout(() => { isLoopingRef.current = false; }, 800);
-          } else {
-            const rel = Math.max(0, video.currentTime - startPos);
-            if (Math.abs(rel - lastReportedTimeRef.current) >= 0.04) {
-              lastReportedTimeRef.current = rel;
-              setCurrentTime(rel);
-            }
-            if (ambientVideoRef.current && Math.abs(ambientVideoRef.current.currentTime - video.currentTime) > 0.3) {
-              ambientVideoRef.current.currentTime = video.currentTime;
-            }
-            if (ambientVideoRef.current && ambientVideoRef.current.paused && !video.paused) {
-              ambientVideoRef.current.play().catch(() => {});
-            }
-          }
+          syncVideoProgress(video);
         }
       }
       animId = requestAnimationFrame(syncTime);
@@ -507,7 +517,7 @@ export default function ClipVideoPreview({
 
     animId = requestAnimationFrame(syncTime);
     return () => cancelAnimationFrame(animId);
-  }, [clip.id, clipStart, clipEnd, clipDuration, isYouTube, isPlaying]);
+  }, [clip.id, clipStart, clipEnd, clipDuration, isYouTube]);
 
   const togglePlay = () => {
     if (isYouTube) {
@@ -1079,6 +1089,9 @@ export default function ClipVideoPreview({
                     src={sourceMediaUrl}
                     playsInline
                     preload="auto"
+                    onTimeUpdate={(e) => syncVideoProgress(e.currentTarget)}
+                    onPlay={() => setIsPlaying(true)}
+                    onPause={() => setIsPlaying(false)}
                     onEnded={handleRestart}
                     className={`transition-opacity duration-300 ${
                       previewMode === 'full'
@@ -1246,6 +1259,14 @@ export default function ClipVideoPreview({
                   onChange={(e) => {
                     const val = parseFloat(e.target.value);
                     handleScrubChange(val);
+                  }}
+                  onPointerUp={(e) => {
+                    const val = parseFloat((e.target as HTMLInputElement).value);
+                    handleSeekCommit(val);
+                  }}
+                  onTouchEnd={(e) => {
+                    const val = parseFloat((e.target as HTMLInputElement).value);
+                    handleSeekCommit(val);
                   }}
                   className="w-full h-2.5 rounded-full appearance-none cursor-pointer bg-[#1E2230] accent-[#10B981] focus:outline-none transition-all shadow-inner"
                   style={{
