@@ -70,55 +70,71 @@ export async function getYouTubeMetadata(url: string, durationSecEstimate: numbe
     throw new Error('Invalid YouTube URL. Please provide a link in the format https://youtube.com/watch?v=... or https://youtu.be/...');
   }
 
-  let title = 'Hindi / Hinglish Creator Podcast Episode';
-  let author = 'Indian Creator Studio';
+  let title = 'Hindi / Hinglish Creator Video';
+  let author = 'YouTube Creator';
   let durationSec = durationSecEstimate;
   let thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
 
-  // 1. Try VisionOS endpoint (bypasses age-gate and login-gate without account credentials)
-  const visionMeta = await getMetadataViaVisionOS(videoId);
-  if (visionMeta?.title) {
-    title = visionMeta.title;
-    if (visionMeta.author) author = visionMeta.author;
-    if (visionMeta.durationSec) durationSec = visionMeta.durationSec;
-  } else {
-    // 2. Try Innertube
-    try {
-      const { Innertube, UniversalCache } = await import('youtubei.js');
-      const yt = await Innertube.create({
-        cache: new UniversalCache(false),
-      });
-      const info = await yt.getBasicInfo(videoId);
-      if (info.basic_info.title) title = info.basic_info.title;
-      if (info.basic_info.author) author = info.basic_info.author;
-      if (info.basic_info.duration && typeof info.basic_info.duration === 'number') {
-        durationSec = info.basic_info.duration;
-      }
-      const thumbs = info.basic_info.thumbnail;
-      if (thumbs && thumbs.length > 0) {
-        thumbnailUrl = thumbs[thumbs.length - 1].url;
-      }
-    } catch (innertubeErr: any) {
-      console.warn(`[YouTube Ingestion] Innertube basic info failed for ${videoId}: ${innertubeErr.message}`);
-      // 3. Fallback to oEmbed with browser User-Agent
-      const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
-      try {
-        const res = await fetch(oembedUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept': 'application/json',
-          },
-          next: { revalidate: 3600 },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.title) title = data.title;
-          if (data.author_name) author = data.author_name;
-        }
-      } catch (err: any) {
-        console.warn(`[YouTube Ingestion] Failed to query oEmbed for ${videoId}: ${err.message}`);
+  // 1. Direct oEmbed & noembed lookup (Guaranteed to return real title, author, and high-res thumbnail across ALL public/age-gated videos)
+  try {
+    const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+    const res = await fetch(oembedUrl, {
+      cache: 'no-store',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+      },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.title) title = data.title;
+      if (data.author_name) author = data.author_name;
+      if (data.thumbnail_url) thumbnailUrl = data.thumbnail_url;
+    } else {
+      // Fallback to noembed
+      const noembedRes = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`, { cache: 'no-store' });
+      if (noembedRes.ok) {
+        const noembedData = await noembedRes.json();
+        if (noembedData.title) title = noembedData.title;
+        if (noembedData.author_name) author = noembedData.author_name;
+        if (noembedData.thumbnail_url) thumbnailUrl = noembedData.thumbnail_url;
       }
     }
+  } catch (err: any) {
+    console.warn(`[YouTube Ingestion] oEmbed lookup failed for ${videoId}: ${err.message}`);
+  }
+
+  // 2. Resolve video duration: try watch page HTML regex (fast, reliable on datacenter IPs)
+  try {
+    const watchRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      cache: 'no-store',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    if (watchRes.ok) {
+      const html = await watchRes.text();
+      const lenMatch = html.match(/"lengthSeconds":\s*"(\d+)"/);
+      if (lenMatch && lenMatch[1]) {
+        durationSec = Number(lenMatch[1]);
+      } else {
+        const durMatch = html.match(/"approxDurationMs":\s*"(\d+)"/);
+        if (durMatch && durMatch[1]) {
+          durationSec = Math.round(Number(durMatch[1]) / 1000);
+        }
+      }
+    }
+  } catch (_) {}
+
+  // 3. Try VisionOS endpoint for higher-fidelity metadata if duration is still default
+  if (durationSec === durationSecEstimate) {
+    try {
+      const visionMeta = await getMetadataViaVisionOS(videoId);
+      if (visionMeta?.title && title === 'Hindi / Hinglish Creator Video') title = visionMeta.title;
+      if (visionMeta?.author && author === 'YouTube Creator') author = visionMeta.author;
+      if (visionMeta?.durationSec) durationSec = visionMeta.durationSec;
+    } catch (_) {}
   }
 
   const formattedDuration = formatDuration(durationSec);
@@ -272,63 +288,6 @@ async function getMetadataViaVisionOS(videoId: string): Promise<{ title?: string
     }
   } catch (_) {}
   return null;
-}
-
-export async function fetchYouTubeSessionDebug(videoId: string): Promise<any> {
-  const session = await fetchYouTubeSession();
-  const payload = {
-    context: {
-      client: {
-        clientName: 'VISIONOS',
-        clientVersion: '1.02',
-        deviceMake: 'Apple',
-        deviceModel: 'RealityDevice17,1',
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
-        osName: 'visionOS',
-        osVersion: '26.5.23O471',
-        hl: 'en',
-        gl: 'US',
-        timeZone: 'UTC',
-        utcOffsetMinutes: 0,
-        visitorData: session.visitorData || undefined,
-      },
-    },
-    videoId,
-    playbackContext: {
-      contentPlaybackContext: {
-        html5Preference: 'HTML5_PREF_WANTS',
-        signatureTimestamp: 20711,
-      },
-    },
-    contentCheckOk: true,
-    racyCheckOk: true,
-  };
-
-  const res = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
-    method: 'POST',
-    cache: 'no-store',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Youtube-Client-Name': '101',
-      'X-Youtube-Client-Version': '1.02',
-      'Origin': 'https://www.youtube.com',
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
-      ...(session.cookieHeader ? { Cookie: session.cookieHeader } : {}),
-      ...(session.visitorData ? { 'X-Goog-Visitor-Id': session.visitorData } : {}),
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const data = await res.json();
-  const audioFormats = (data.streamingData?.adaptiveFormats || []).filter((f: any) => f.mimeType?.includes('audio'));
-  return {
-    playerHttp: res.status,
-    hasVisitorData: !!session.visitorData,
-    playabilityStatus: data.playabilityStatus,
-    title: data.videoDetails?.title,
-    audioCount: audioFormats.length,
-    firstAudioUrl: !!audioFormats[0]?.url,
-  };
 }
 
 interface VisionOSResult {

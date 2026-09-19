@@ -666,18 +666,23 @@ export default function HeroUploader() {
               <AlertTriangle className="h-5 w-5 text-[#EF4444] shrink-0 mt-0.5" />
               <div>
                 <p className="text-xs font-semibold text-white">{errorMessage}</p>
+                {activeTab === 'url' && (errorMessage.includes('Upload File') || errorMessage.includes('login required')) && (
+                  <p className="mt-1.5 text-[11px] text-[#A1A1A1]">
+                    💡 <strong>Quick Fix:</strong> Click the button to switch to the Upload tab. You can upload the downloaded audio or video file directly for instant, unrestricted clip generation.
+                  </p>
+                )}
               </div>
             </div>
 
             <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
-              {activeTab === 'url' && errorMessage.includes('Upload File') && (
+              {activeTab === 'url' && (errorMessage.includes('Upload File') || errorMessage.includes('login required')) && (
                 <button
                   type="button"
                   onClick={() => {
                     setActiveTab('upload');
                     setErrorMessage(null);
                   }}
-                  className="rounded-lg bg-white px-3.5 py-1.5 text-xs font-bold text-black hover:bg-[#E5E5E5] transition-colors cursor-pointer"
+                  className="rounded-lg bg-white px-3.5 py-1.5 text-xs font-bold text-black hover:bg-[#E5E5E5] transition-colors cursor-pointer shrink-0"
                 >
                   Switch to Upload File Tab →
                 </button>
