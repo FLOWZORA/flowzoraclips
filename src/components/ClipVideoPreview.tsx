@@ -17,6 +17,13 @@ import {
 import { AspectRatio, ScriptPreference, CandidateClip } from '@/lib/pipeline/types';
 import SocialCopyModal from '@/components/SocialCopyModal';
 
+declare global {
+  interface Window {
+    YT?: any;
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
+
 interface ClipVideoPreviewProps {
   clip: CandidateClip;
   scriptPreference: ScriptPreference;
@@ -38,6 +45,8 @@ export default function ClipVideoPreview({
 }: ClipVideoPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const ambientVideoRef = useRef<HTMLVideoElement>(null);
+  const ytIframeRef = useRef<HTMLIFrameElement>(null);
+  const ytPlayerRef = useRef<any>(null);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>(initialAspectRatio);
   const [scriptPreference, setScriptPreference] = useState<ScriptPreference>(initialScript);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -136,6 +145,161 @@ export default function ClipVideoPreview({
     const match = sourceMediaUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
     if (match) ytVideoId = match[1];
   }
+
+  // Helper to send commands to YouTube player via YT.Player API or iframe postMessage
+  const sendYtCommand = (func: string, args: any[] = []) => {
+    if (ytPlayerRef.current && typeof ytPlayerRef.current[func] === 'function') {
+      try {
+        ytPlayerRef.current[func](...args);
+        return;
+      } catch (_) {}
+    }
+    if (ytIframeRef.current?.contentWindow) {
+      try {
+        ytIframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: 'command', func, args }),
+          '*'
+        );
+      } catch (_) {}
+    }
+  };
+
+  // Initialize YouTube Iframe API for YouTube video control & sync
+  useEffect(() => {
+    if (!isYouTube || !ytVideoId) return;
+
+    let active = true;
+    let pollInterval: any = null;
+
+    const initYT = () => {
+      if (!active) return;
+      if (window.YT && window.YT.Player && ytIframeRef.current) {
+        try {
+          if (ytPlayerRef.current) {
+            try { ytPlayerRef.current.destroy(); } catch (_) {}
+          }
+          ytPlayerRef.current = new window.YT.Player(ytIframeRef.current, {
+            events: {
+              onReady: (event: any) => {
+                if (!active) return;
+                try {
+                  event.target.seekTo(clipStart, true);
+                  event.target.playVideo();
+                  setIsPlaying(true);
+                } catch (_) {}
+              },
+              onStateChange: (event: any) => {
+                if (!active) return;
+                // 1: PLAYING, 2: PAUSED, 0: ENDED
+                if (event.data === 1) setIsPlaying(true);
+                if (event.data === 2) setIsPlaying(false);
+                if (event.data === 0) {
+                  try {
+                    event.target.seekTo(clipStart, true);
+                    event.target.playVideo();
+                    setCurrentTime(0);
+                    setIsPlaying(true);
+                  } catch (_) {}
+                }
+              },
+            },
+          });
+        } catch (err) {
+          console.warn('[YouTube Player] Init error:', err);
+        }
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      if (window.YT && window.YT.Player) {
+        initYT();
+      } else {
+        if (!document.getElementById('yt-iframe-api-script')) {
+          const tag = document.createElement('script');
+          tag.id = 'yt-iframe-api-script';
+          tag.src = 'https://www.youtube.com/iframe_api';
+          document.body.appendChild(tag);
+        }
+        pollInterval = setInterval(() => {
+          if (window.YT && window.YT.Player) {
+            clearInterval(pollInterval);
+            initYT();
+          }
+        }, 80);
+      }
+    }
+
+    return () => {
+      active = false;
+      if (pollInterval) clearInterval(pollInterval);
+      if (ytPlayerRef.current) {
+        try { ytPlayerRef.current.destroy(); } catch (_) {}
+        ytPlayerRef.current = null;
+      }
+    };
+  }, [isYouTube, ytVideoId, clip.id, clipStart, clipEnd]);
+
+  // Real-time postMessage listener from YouTube iframe for live timestamp sync & state updates
+  useEffect(() => {
+    if (!isYouTube) return;
+
+    const handleMessage = (e: MessageEvent) => {
+      try {
+        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+        if (data && data.event === 'infoDelivery' && data.info) {
+          if (typeof data.info.currentTime === 'number') {
+            const raw = data.info.currentTime;
+            if (raw >= clipEnd - 0.08) {
+              sendYtCommand('seekTo', [clipStart, true]);
+              sendYtCommand('playVideo');
+              setCurrentTime(0);
+            } else {
+              const rel = Math.max(0, Math.min(clipDuration, raw - clipStart));
+              setCurrentTime(Number(rel.toFixed(2)));
+            }
+          }
+          if (typeof data.info.playerState === 'number') {
+            if (data.info.playerState === 1) setIsPlaying(true);
+            if (data.info.playerState === 2) setIsPlaying(false);
+          }
+          if (typeof data.info.muted === 'boolean') {
+            setIsMuted(data.info.muted);
+          }
+        }
+      } catch (_) {}
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [isYouTube, clipStart, clipEnd, clipDuration]);
+
+  // 60 FPS continuous time synchronization loop for YouTube
+  useEffect(() => {
+    if (!isYouTube || !isPlaying) return;
+
+    let animId: number;
+    const syncLoop = () => {
+      if (ytPlayerRef.current && typeof ytPlayerRef.current.getCurrentTime === 'function') {
+        try {
+          const raw = ytPlayerRef.current.getCurrentTime();
+          if (typeof raw === 'number' && !isNaN(raw) && raw > 0) {
+            if (raw >= clipEnd - 0.08) {
+              ytPlayerRef.current.seekTo(clipStart, true);
+              ytPlayerRef.current.playVideo();
+              setCurrentTime(0);
+            } else {
+              const rel = Math.max(0, Math.min(clipDuration, raw - clipStart));
+              setCurrentTime(Number(rel.toFixed(2)));
+            }
+          }
+        } catch (_) {}
+      }
+      animId = requestAnimationFrame(syncLoop);
+    };
+
+    animId = requestAnimationFrame(syncLoop);
+    return () => cancelAnimationFrame(animId);
+  }, [isYouTube, isPlaying, clipStart, clipEnd, clipDuration]);
 
   // Synchronize HTML5 video playback
   useEffect(() => {
@@ -252,6 +416,17 @@ export default function ClipVideoPreview({
   };
 
   const togglePlay = () => {
+    if (isYouTube) {
+      if (isPlaying) {
+        sendYtCommand('pauseVideo');
+        setIsPlaying(false);
+      } else {
+        sendYtCommand('playVideo');
+        setIsPlaying(true);
+      }
+      return;
+    }
+
     const video = videoRef.current;
     if (!video) return;
 
@@ -271,6 +446,19 @@ export default function ClipVideoPreview({
   };
 
   const toggleMute = () => {
+    if (isYouTube) {
+      const nextMuted = !isMuted;
+      if (nextMuted) {
+        sendYtCommand('mute');
+        setIsMuted(true);
+      } else {
+        sendYtCommand('unMute');
+        setIsMuted(false);
+        setShowUnmuteHint(false);
+      }
+      return;
+    }
+
     const video = videoRef.current;
     if (!video) return;
 
@@ -284,6 +472,14 @@ export default function ClipVideoPreview({
   };
 
   const handleRestart = () => {
+    if (isYouTube) {
+      sendYtCommand('seekTo', [clipStart, true]);
+      sendYtCommand('playVideo');
+      setCurrentTime(0);
+      setIsPlaying(true);
+      return;
+    }
+
     const video = videoRef.current;
     if (!video) return;
 
@@ -302,12 +498,19 @@ export default function ClipVideoPreview({
   };
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    const video = videoRef.current;
-    if (!video) return;
-
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const targetRel = ratio * clipDuration;
+
+    if (isYouTube) {
+      sendYtCommand('seekTo', [clipStart + targetRel, true]);
+      setCurrentTime(Number(targetRel.toFixed(2)));
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video) return;
+
     const vDur = video.duration || 0;
     const startPos = clipStart < vDur ? clipStart : 0;
 
@@ -394,17 +597,7 @@ export default function ClipVideoPreview({
     return result;
   }, [clip.id, clipDuration, stableWords, isDevanagari, scriptPreference]);
 
-  // Advance timer for YouTube embedded preview
-  useEffect(() => {
-    if (!isYouTube || !isPlaying) return;
-    const interval = setInterval(() => {
-      setCurrentTime((prev) => {
-        if (prev >= clipDuration) return 0;
-        return Number((prev + 0.1).toFixed(2));
-      });
-    }, 100);
-    return () => clearInterval(interval);
-  }, [isYouTube, isPlaying, clipDuration]);
+
 
   // Find the active caption phrase for current playback time.
   const activePhrase = React.useMemo(() => {
@@ -665,10 +858,19 @@ export default function ClipVideoPreview({
                 {/* YouTube Iframe or HTML5 Native Video Tag */}
                 {isYouTube && ytVideoId ? (
                   <iframe
-                    src={`https://www.youtube-nocookie.com/embed/${ytVideoId}?autoplay=1&start=${Math.floor(clipStart)}&end=${Math.ceil(clipEnd)}&controls=1&modestbranding=1&rel=0&playsinline=1`}
-                    className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-auto"
+                    ref={ytIframeRef}
+                    id="flowzora-yt-iframe"
+                    src={`https://www.youtube.com/embed/${ytVideoId}?enablejsapi=1&autoplay=1&start=${Math.floor(clipStart)}&end=${Math.ceil(clipEnd)}&controls=0&modestbranding=1&rel=0&playsinline=1&widgetid=1`}
+                    className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
+                    onLoad={() => {
+                      setTimeout(() => {
+                        if (ytIframeRef.current?.contentWindow) {
+                          ytIframeRef.current.contentWindow.postMessage('{"event":"listening"}', '*');
+                        }
+                      }, 350);
+                    }}
                   />
                 ) : sourceMediaUrl ? (
                   <video
