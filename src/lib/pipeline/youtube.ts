@@ -150,8 +150,15 @@ async function fetchYouTubeSession(): Promise<{ cookieHeader: string; visitorDat
       },
     });
     const pageHtml = await pageRes.text();
-    const rawCookies = pageRes.headers.getSetCookie ? pageRes.headers.getSetCookie() : [];
-    const cookieHeader = rawCookies.map((c) => c.split(';')[0]).join('; ');
+    let cookieHeader = '';
+    try {
+      if (typeof (pageRes.headers as any).getSetCookie === 'function') {
+        cookieHeader = (pageRes.headers as any).getSetCookie().map((c: string) => c.split(';')[0]).join('; ');
+      } else {
+        const raw = pageRes.headers.get('set-cookie');
+        if (raw) cookieHeader = raw;
+      }
+    } catch (_) {}
     const visitorMatch = pageHtml.match(/"VISITOR_DATA":\s*"([^"]+)"/);
     const visitorData = visitorMatch ? visitorMatch[1] : '';
     return { cookieHeader, visitorData };
@@ -219,6 +226,13 @@ async function getMetadataViaVisionOS(videoId: string): Promise<{ title?: string
   return null;
 }
 
+interface VisionOSResult {
+  audioBuffer?: Buffer;
+  filename?: string;
+  metadata?: Partial<YouTubeVideoMetadata>;
+  error?: string;
+}
+
 /**
  * Direct VisionOS Ingestion Strategy (Pure Node.js, 100% Vercel Serverless compatible)
  * Bypasses YouTube's "Video is login required" and age-gates without requiring a logged-in account,
@@ -227,11 +241,7 @@ async function getMetadataViaVisionOS(videoId: string): Promise<{ title?: string
 async function extractViaVisionOS(
   videoId: string,
   fallbackTitle: string
-): Promise<{
-  audioBuffer: Buffer;
-  filename: string;
-  metadata?: Partial<YouTubeVideoMetadata>;
-} | null> {
+): Promise<VisionOSResult | null> {
   try {
     const { cookieHeader, visitorData } = await fetchYouTubeSession();
 
@@ -276,16 +286,17 @@ async function extractViaVisionOS(
       body: JSON.stringify(payload),
     });
 
-    if (!playerRes.ok) return null;
+    if (!playerRes.ok) return { error: `Player API returned HTTP ${playerRes.status}` };
     const data = await playerRes.json();
     if (data.playabilityStatus?.status !== 'OK') {
-      console.warn(`[VisionOS Extraction] Playability status: ${data.playabilityStatus?.status} (${data.playabilityStatus?.reason})`);
-      return null;
+      const reason = data.playabilityStatus?.reason || data.playabilityStatus?.status || 'Restricted';
+      console.warn(`[VisionOS Extraction] Playability status: ${data.playabilityStatus?.status} (${reason})`);
+      return { error: `VisionOS: ${reason}` };
     }
 
     const adaptive = data.streamingData?.adaptiveFormats || [];
     const audioFormats = adaptive.filter((f: any) => f.mimeType?.includes('audio') && f.url);
-    if (audioFormats.length === 0) return null;
+    if (audioFormats.length === 0) return { error: 'VisionOS: No direct audio streams available' };
 
     // Pick a format under 15MB or lowest bitrate audio (itag 249 opus ~50k or itag 139 m4a ~50k or itag 250 opus ~70k)
     const selectedFormat = audioFormats.find((f: any) => f.itag === 249 || f.itag === 139 || f.itag === 250) || audioFormats[0];
@@ -301,7 +312,7 @@ async function extractViaVisionOS(
       },
     });
 
-    if (!audioRes.ok && audioRes.status !== 206) return null;
+    if (!audioRes.ok && audioRes.status !== 206) return { error: `Audio stream HTTP ${audioRes.status}` };
 
     const arrayBuf = await audioRes.arrayBuffer();
     if (arrayBuf.byteLength > 1024) {
@@ -321,6 +332,7 @@ async function extractViaVisionOS(
     }
   } catch (err: any) {
     console.warn(`[YouTube Ingest] VisionOS direct stream error: ${err.message}`);
+    return { error: `VisionOS error: ${err.message}` };
   }
   return null;
 }
@@ -361,15 +373,18 @@ export async function extractYouTubeAudioStream(
   // 100% Serverless compatible on Vercel
   // --------------------------------------------------------------------------
   const visionResult = await extractViaVisionOS(metadata.videoId, metadata.title);
-  if (visionResult && visionResult.audioBuffer && visionResult.audioBuffer.length > 1024) {
+  if (visionResult?.audioBuffer && visionResult.audioBuffer.length > 1024) {
     return {
       audioBuffer: visionResult.audioBuffer,
-      filename: visionResult.filename,
+      filename: visionResult.filename || `youtube_${metadata.videoId}.m4a`,
       metadata: {
         ...metadata,
         ...(visionResult.metadata || {}),
       },
     };
+  }
+  if (visionResult?.error) {
+    lastErrorMsg = visionResult.error;
   }
 
   // --------------------------------------------------------------------------
