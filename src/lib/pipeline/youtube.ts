@@ -59,6 +59,10 @@ export function formatDuration(seconds: number): string {
  * Fetches YouTube video metadata with exact duration and high-res thumbnail.
  * Uses Innertube (pure JS) with fallback to official oEmbed.
  */
+/**
+ * Fetches YouTube video metadata with exact duration and high-res thumbnail.
+ * Multi-layer resolver: VisionOS client -> Innertube -> Official oEmbed with browser headers.
+ */
 export async function getYouTubeMetadata(url: string, durationSecEstimate: number = 480): Promise<YouTubeVideoMetadata> {
   const { videoId, isValid } = parseYouTubeUrl(url);
 
@@ -71,41 +75,49 @@ export async function getYouTubeMetadata(url: string, durationSecEstimate: numbe
   let durationSec = durationSecEstimate;
   let thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
 
-  // 1. Try Innertube for exact title, author, duration, and thumbnail
-  try {
-    const { Innertube, UniversalCache } = await import('youtubei.js');
-    const yt = await Innertube.create({
-      cache: new UniversalCache(false),
-    });
-    const info = await yt.getBasicInfo(videoId);
-    if (info.basic_info.title) title = info.basic_info.title;
-    if (info.basic_info.author) author = info.basic_info.author;
-    if (info.basic_info.duration && typeof info.basic_info.duration === 'number') {
-      durationSec = info.basic_info.duration;
-    }
-    const thumbs = info.basic_info.thumbnail;
-    if (thumbs && thumbs.length > 0) {
-      thumbnailUrl = thumbs[thumbs.length - 1].url;
-    }
-  } catch (innertubeErr: any) {
-    console.warn(`[YouTube Ingestion] Innertube basic info failed for ${videoId}: ${innertubeErr.message}`);
-    // 2. Fallback to oEmbed with browser User-Agent
-    const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+  // 1. Try VisionOS endpoint (bypasses age-gate and login-gate without account credentials)
+  const visionMeta = await getMetadataViaVisionOS(videoId);
+  if (visionMeta?.title) {
+    title = visionMeta.title;
+    if (visionMeta.author) author = visionMeta.author;
+    if (visionMeta.durationSec) durationSec = visionMeta.durationSec;
+  } else {
+    // 2. Try Innertube
     try {
-      const res = await fetch(oembedUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          'Accept': 'application/json',
-        },
-        next: { revalidate: 3600 },
+      const { Innertube, UniversalCache } = await import('youtubei.js');
+      const yt = await Innertube.create({
+        cache: new UniversalCache(false),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.title) title = data.title;
-        if (data.author_name) author = data.author_name;
+      const info = await yt.getBasicInfo(videoId);
+      if (info.basic_info.title) title = info.basic_info.title;
+      if (info.basic_info.author) author = info.basic_info.author;
+      if (info.basic_info.duration && typeof info.basic_info.duration === 'number') {
+        durationSec = info.basic_info.duration;
       }
-    } catch (err: any) {
-      console.warn(`[YouTube Ingestion] Failed to query oEmbed for ${videoId}: ${err.message}`);
+      const thumbs = info.basic_info.thumbnail;
+      if (thumbs && thumbs.length > 0) {
+        thumbnailUrl = thumbs[thumbs.length - 1].url;
+      }
+    } catch (innertubeErr: any) {
+      console.warn(`[YouTube Ingestion] Innertube basic info failed for ${videoId}: ${innertubeErr.message}`);
+      // 3. Fallback to oEmbed with browser User-Agent
+      const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+      try {
+        const res = await fetch(oembedUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+          },
+          next: { revalidate: 3600 },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.title) title = data.title;
+          if (data.author_name) author = data.author_name;
+        }
+      } catch (err: any) {
+        console.warn(`[YouTube Ingestion] Failed to query oEmbed for ${videoId}: ${err.message}`);
+      }
     }
   }
 
@@ -127,11 +139,198 @@ export async function getYouTubeMetadata(url: string, durationSecEstimate: numbe
 }
 
 /**
+ * Direct VisionOS metadata resolver to bypass age-gates & login requirements
+ */
+async function getMetadataViaVisionOS(videoId: string): Promise<{ title?: string; author?: string; durationSec?: number } | null> {
+  try {
+    const pageRes = await fetch('https://www.youtube.com/', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    const pageHtml = await pageRes.text();
+    const visitorMatch = pageHtml.match(/"VISITOR_DATA":\s*"([^"]+)"/);
+    const visitorData = visitorMatch ? visitorMatch[1] : '';
+
+    const payload = {
+      context: {
+        client: {
+          clientName: 'VISIONOS',
+          clientVersion: '1.02',
+          deviceMake: 'Apple',
+          deviceModel: 'RealityDevice17,1',
+          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
+          osName: 'visionOS',
+          osVersion: '26.5.23O471',
+          hl: 'en',
+          timeZone: 'UTC',
+          utcOffsetMinutes: 0,
+          visitorData: visitorData || undefined,
+        },
+      },
+      videoId,
+      playbackContext: {
+        contentPlaybackContext: {
+          html5Preference: 'HTML5_PREF_WANTS',
+          signatureTimestamp: 20711,
+        },
+      },
+      contentCheckOk: true,
+      racyCheckOk: true,
+    };
+
+    const res = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Youtube-Client-Name': '101',
+        'X-Youtube-Client-Version': '1.02',
+        'Origin': 'https://www.youtube.com',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
+        ...(visitorData ? { 'X-Goog-Visitor-Id': visitorData } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.videoDetails?.title) {
+        return {
+          title: data.videoDetails.title,
+          author: data.videoDetails.author,
+          durationSec: Number(data.videoDetails.lengthSeconds) || undefined,
+        };
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+/**
+ * Direct VisionOS Ingestion Strategy (Pure Node.js, 100% Vercel Serverless compatible)
+ * Bypasses YouTube's "Video is login required" and age-gates without requiring a logged-in account,
+ * and extracts direct un-ciphered audio streams directly in-memory.
+ */
+async function extractViaVisionOS(
+  videoId: string,
+  fallbackTitle: string
+): Promise<{
+  audioBuffer: Buffer;
+  filename: string;
+  metadata?: Partial<YouTubeVideoMetadata>;
+} | null> {
+  try {
+    const pageRes = await fetch('https://www.youtube.com/', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    const pageHtml = await pageRes.text();
+    const rawCookies = pageRes.headers.getSetCookie ? pageRes.headers.getSetCookie() : [];
+    const cookieHeader = rawCookies.map((c) => c.split(';')[0]).join('; ');
+
+    const visitorMatch = pageHtml.match(/"VISITOR_DATA":\s*"([^"]+)"/);
+    const visitorData = visitorMatch ? visitorMatch[1] : '';
+
+    const payload = {
+      context: {
+        client: {
+          clientName: 'VISIONOS',
+          clientVersion: '1.02',
+          deviceMake: 'Apple',
+          deviceModel: 'RealityDevice17,1',
+          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
+          osName: 'visionOS',
+          osVersion: '26.5.23O471',
+          hl: 'en',
+          timeZone: 'UTC',
+          utcOffsetMinutes: 0,
+          visitorData: visitorData || undefined,
+        },
+      },
+      videoId,
+      playbackContext: {
+        contentPlaybackContext: {
+          html5Preference: 'HTML5_PREF_WANTS',
+          signatureTimestamp: 20711,
+        },
+      },
+      contentCheckOk: true,
+      racyCheckOk: true,
+    };
+
+    const playerRes = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Youtube-Client-Name': '101',
+        'X-Youtube-Client-Version': '1.02',
+        'Origin': 'https://www.youtube.com',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+        ...(visitorData ? { 'X-Goog-Visitor-Id': visitorData } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!playerRes.ok) return null;
+    const data = await playerRes.json();
+    if (data.playabilityStatus?.status !== 'OK') {
+      console.warn(`[VisionOS Extraction] Playability status: ${data.playabilityStatus?.status} (${data.playabilityStatus?.reason})`);
+      return null;
+    }
+
+    const adaptive = data.streamingData?.adaptiveFormats || [];
+    const audioFormats = adaptive.filter((f: any) => f.mimeType?.includes('audio') && f.url);
+    if (audioFormats.length === 0) return null;
+
+    // Pick a format under 15MB or lowest bitrate audio (itag 249 opus ~50k or itag 139 m4a ~50k or itag 250 opus ~70k)
+    const selectedFormat = audioFormats.find((f: any) => f.itag === 249 || f.itag === 139 || f.itag === 250) || audioFormats[0];
+    const isOpus = selectedFormat.mimeType?.includes('opus');
+    const ext = isOpus ? '.webm' : '.m4a';
+
+    // Cap audio at 18 MB (~25 minutes of speech) to ensure it stays well within Groq's 25MB limit
+    const MAX_BYTES = 18 * 1024 * 1024;
+    const audioRes = await fetch(selectedFormat.url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
+        'Range': `bytes=0-${MAX_BYTES}`,
+      },
+    });
+
+    if (!audioRes.ok && audioRes.status !== 206) return null;
+
+    const arrayBuf = await audioRes.arrayBuffer();
+    if (arrayBuf.byteLength > 1024) {
+      const audioBuffer = Buffer.from(arrayBuf);
+      const extractedTitle = data.videoDetails?.title || fallbackTitle;
+      console.log(`[YouTube Ingest] VisionOS direct stream extracted ${(audioBuffer.length / (1024 * 1024)).toFixed(2)} MB for "${extractedTitle}"`);
+
+      return {
+        audioBuffer,
+        filename: `youtube_${videoId}${ext}`,
+        metadata: {
+          title: data.videoDetails?.title,
+          author: data.videoDetails?.author,
+          durationSec: Number(data.videoDetails?.lengthSeconds) || undefined,
+        },
+      };
+    }
+  } catch (err: any) {
+    console.warn(`[YouTube Ingest] VisionOS direct stream error: ${err.message}`);
+  }
+  return null;
+}
+
+/**
  * Extracts the audio stream from a YouTube video URL.
  * Multi-tier extraction strategy:
- * 1. Pure Node.js in-memory stream via YouTube.js (InnerTube ANDROID client) - 100% serverless compatible (Vercel)
- * 2. Remote Video Worker (Railway / Render) if configured
- * 3. Local Python & yt-dlp via os.tmpdir() (safe for non-serverless dev hosts)
+ * 1. VisionOS Direct Stream (bypasses age-gates and login-requirements without bot detection)
+ * 2. Pure Node.js in-memory stream via YouTube.js (InnerTube ANDROID client)
+ * 3. Remote Video Worker (Railway / Render) if configured
+ * 4. Local Python & yt-dlp via os.tmpdir() (safe for non-serverless dev hosts)
  */
 export async function extractYouTubeAudioStream(
   url: string,
@@ -155,6 +354,22 @@ export async function extractYouTubeAudioStream(
   console.log(`[YouTube Ingest] Extracting audio for "${metadata.title}" (${metadata.videoId})...`);
 
   let lastErrorMsg = '';
+
+  // --------------------------------------------------------------------------
+  // STRATEGY 0: VisionOS Direct Stream (Bypasses login-gates, age-gates, and signature cipher)
+  // 100% Serverless compatible on Vercel
+  // --------------------------------------------------------------------------
+  const visionResult = await extractViaVisionOS(metadata.videoId, metadata.title);
+  if (visionResult && visionResult.audioBuffer && visionResult.audioBuffer.length > 1024) {
+    return {
+      audioBuffer: visionResult.audioBuffer,
+      filename: visionResult.filename,
+      metadata: {
+        ...metadata,
+        ...(visionResult.metadata || {}),
+      },
+    };
+  }
 
   // --------------------------------------------------------------------------
   // STRATEGY 1: Pure JavaScript / TypeScript in-memory audio extraction (youtubei.js)
