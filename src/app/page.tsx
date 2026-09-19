@@ -8,6 +8,9 @@ import HindiBenchmarkCallout from '@/components/HindiBenchmarkCallout';
 import FaqSection from '@/components/FaqSection';
 import Footer from '@/components/Footer';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default function HomePage() {
   return (
     <>

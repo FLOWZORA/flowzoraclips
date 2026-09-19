@@ -58,6 +58,8 @@ export default function ClipVideoPreview({
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [scrubTime, setScrubTime] = useState<number | null>(null);
   const isScrubbingRef = useRef(false);
+  const latestScrubTimeRef = useRef<number | null>(null);
+  const ytScrubThrottleRef = useRef<number>(0);
   const isSeekingRef = useRef(false);
   const targetSeekPosRef = useRef<number | null>(null);
   const seekTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -598,6 +600,10 @@ export default function ClipVideoPreview({
 
   const handleSeekCommit = (targetRel: number) => {
     const clampedRel = Math.max(0, Math.min(clipDuration, targetRel));
+    isScrubbingRef.current = false;
+    setIsScrubbing(false);
+    latestScrubTimeRef.current = null;
+    setScrubTime(null);
     setCurrentTime(Number(clampedRel.toFixed(2)));
     lastReportedTimeRef.current = clampedRel;
 
@@ -641,6 +647,64 @@ export default function ClipVideoPreview({
       video.play().catch(() => {});
     }
   };
+
+  const handleScrubChange = (val: number) => {
+    if (isNaN(val)) return;
+    const clamped = Math.max(0, Math.min(clipDuration, val));
+    isScrubbingRef.current = true;
+    setIsScrubbing(true);
+    latestScrubTimeRef.current = clamped;
+    setScrubTime(clamped);
+    setCurrentTime(clamped);
+
+    if (isYouTube) {
+      const now = Date.now();
+      if (now - ytScrubThrottleRef.current > 120) {
+        ytScrubThrottleRef.current = now;
+        sendYtCommand('seekTo', [clipStart + clamped, false]);
+      }
+    } else if (videoRef.current) {
+      const vDur = videoRef.current.duration || 0;
+      const startPos = clipStart < vDur ? clipStart : 0;
+      videoRef.current.currentTime = startPos + clamped;
+      if (ambientVideoRef.current) {
+        ambientVideoRef.current.currentTime = startPos + clamped;
+      }
+    }
+  };
+
+  const handleJump = (deltaSeconds: number) => {
+    const target = Math.max(0, Math.min(clipDuration, effectiveCurrentTime + deltaSeconds));
+    handleSeekCommit(target);
+  };
+
+  // Global pointer/touch release listener so slider scrubbing NEVER gets stuck
+  useEffect(() => {
+    const handleGlobalRelease = () => {
+      if (isScrubbingRef.current) {
+        isScrubbingRef.current = false;
+        setIsScrubbing(false);
+        const finalTime = latestScrubTimeRef.current;
+        latestScrubTimeRef.current = null;
+        setScrubTime(null);
+        if (finalTime !== null && !isNaN(finalTime)) {
+          handleSeekCommit(finalTime);
+        }
+      }
+    };
+
+    window.addEventListener('pointerup', handleGlobalRelease);
+    window.addEventListener('pointercancel', handleGlobalRelease);
+    window.addEventListener('mouseup', handleGlobalRelease);
+    window.addEventListener('touchend', handleGlobalRelease);
+
+    return () => {
+      window.removeEventListener('pointerup', handleGlobalRelease);
+      window.removeEventListener('pointercancel', handleGlobalRelease);
+      window.removeEventListener('mouseup', handleGlobalRelease);
+      window.removeEventListener('touchend', handleGlobalRelease);
+    };
+  }, [clipStart, clipDuration, isYouTube, isPlaying]);
 
   const formatTime = (seconds: number) => {
     const clamped = Math.max(0, seconds);
@@ -1115,25 +1179,132 @@ export default function ClipVideoPreview({
 
                 {/* On-Video Audio/Video Scrubber Bar */}
                 <div
-                  onClick={(e) => {
+                  onPointerDown={(e) => {
                     e.stopPropagation();
                     const rect = e.currentTarget.getBoundingClientRect();
                     if (rect.width > 0) {
                       const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                      handleSeekCommit(ratio * clipDuration);
+                      handleScrubChange(ratio * clipDuration);
                     }
                   }}
                   className="absolute bottom-0 left-0 right-0 h-4 flex items-end cursor-pointer z-30 group/bar select-none"
-                  title="Click to seek timestamp"
+                  title="Click or drag to seek timestamp"
                 >
                   <div className="w-full h-1.5 bg-white/20 group-hover/bar:h-2.5 transition-all relative">
                     <div
                       className="h-full bg-[#10B981] relative"
                       style={{ width: `${progressPercent}%` }}
                     >
-                      <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-2.5 h-2.5 bg-white rounded-full shadow border border-[#10B981] opacity-0 group-hover/bar:opacity-100 transition-opacity" />
+                      <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-2.5 h-2.5 bg-white rounded-full shadow border border-[#10B981] opacity-80 group-hover/bar:opacity-100 transition-opacity" />
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Master Timeline Scrubber & Player Controls Deck Directly Below Video Frame */}
+            <div className="w-full max-w-[min(94vw,520px)] mt-2.5 bg-[#0A0B10] p-2.5 sm:p-3 rounded-2xl border border-[#2B3040] shadow-xl select-none">
+              {/* Header: Current time / Duration & State */}
+              <div className="flex items-center justify-between text-xs font-mono mb-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[#10B981] font-bold tabular-nums text-xs sm:text-sm">
+                    {formatTime(effectiveCurrentTime)}
+                  </span>
+                  <span className="text-[#626B82]">/</span>
+                  <span className="text-[#9AA2B6] tabular-nums text-xs sm:text-sm">
+                    {formatTime(clipDuration)}
+                  </span>
+                </div>
+                <span
+                  className={`text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full ${
+                    isScrubbing
+                      ? 'bg-[#F59E0B]/20 text-[#F59E0B] border border-[#F59E0B]/40'
+                      : isPlaying
+                      ? 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/40'
+                      : 'bg-[#1E2230] text-[#9AA2B6] border border-white/10'
+                  }`}
+                >
+                  {isScrubbing ? 'Seeking...' : isPlaying ? 'Playing' : 'Paused'}
+                </span>
+              </div>
+
+              {/* Master Range Slider */}
+              <div className="relative w-full flex items-center py-1">
+                <input
+                  type="range"
+                  min={0}
+                  max={clipDuration}
+                  step={0.05}
+                  value={Number(effectiveCurrentTime.toFixed(2))}
+                  onPointerDown={() => {
+                    isScrubbingRef.current = true;
+                    setIsScrubbing(true);
+                  }}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    handleScrubChange(val);
+                  }}
+                  className="w-full h-2.5 rounded-full appearance-none cursor-pointer bg-[#1E2230] accent-[#10B981] focus:outline-none transition-all shadow-inner"
+                  style={{
+                    background: `linear-gradient(to right, #10B981 0%, #34D399 ${progressPercent}%, #1E2230 ${progressPercent}%, #1E2230 100%)`,
+                  }}
+                  title="Slide to seek through clip"
+                />
+              </div>
+
+              {/* Playback action buttons */}
+              <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-[#1E2230]">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleRestart}
+                    className="rounded-xl bg-[#161822] hover:bg-[#1E2230] p-2 text-[#9AA2B6] hover:text-white transition-colors cursor-pointer"
+                    title="Restart Clip"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleJump(-5)}
+                    className="flex items-center gap-0.5 rounded-xl bg-[#161822] hover:bg-[#1E2230] px-2 py-1 text-xs font-mono font-bold text-[#9AA2B6] hover:text-white transition-colors cursor-pointer"
+                    title="Rewind 5s"
+                  >
+                    -5s
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={togglePlay}
+                    className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full bg-[#10B981] text-black hover:bg-[#059669] shadow-lg shadow-[#10B981]/25 transition-transform active:scale-95 cursor-pointer font-bold"
+                    title={isPlaying ? 'Pause' : 'Play'}
+                  >
+                    {isPlaying ? <Pause className="h-5 w-5 fill-black" /> : <Play className="h-5 w-5 ml-0.5 fill-black" />}
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleJump(5)}
+                    className="flex items-center gap-0.5 rounded-xl bg-[#161822] hover:bg-[#1E2230] px-2 py-1 text-xs font-mono font-bold text-[#9AA2B6] hover:text-white transition-colors cursor-pointer"
+                    title="Forward 5s"
+                  >
+                    +5s
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleMute}
+                    className="rounded-xl bg-[#161822] hover:bg-[#1E2230] p-2 text-[#9AA2B6] hover:text-white transition-colors cursor-pointer"
+                    title={isMuted ? 'Unmute' : 'Mute'}
+                  >
+                    {isMuted ? (
+                      <VolumeX className="h-4 w-4 text-[#EF4444]" />
+                    ) : (
+                      <Volume2 className="h-4 w-4 text-[#10B981]" />
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
@@ -1321,100 +1492,8 @@ export default function ClipVideoPreview({
               </div>
             </div>
 
-            {/* Bottom Player Controls & Export */}
+            {/* Bottom Actions: Export */}
             <div className="mt-2 pt-2 border-t border-[#242938]">
-              {/* Interactive Timeline Video Slider */}
-              <div className="mb-2.5 bg-[#0A0B10] p-2.5 rounded-xl border border-[#2B3040]">
-                <div className="flex items-center justify-between text-[11px] font-mono mb-2 select-none">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[#10B981] font-bold tabular-nums text-xs">
-                      {formatTime(effectiveCurrentTime)}
-                    </span>
-                    <span className="text-[#626B82]">/</span>
-                    <span className="text-[#9AA2B6] tabular-nums text-xs">
-                      {formatTime(clipDuration)}
-                    </span>
-                  </div>
-                  <span className={`text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${
-                    isScrubbing
-                      ? 'bg-[#F59E0B]/20 text-[#F59E0B] border border-[#F59E0B]/30'
-                      : isPlaying
-                      ? 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30'
-                      : 'bg-[#1E2230] text-[#9AA2B6] border border-white/10'
-                  }`}>
-                    {isScrubbing ? 'Seeking...' : isPlaying ? 'Playing' : 'Paused'}
-                  </span>
-                </div>
-
-                {/* Smooth Range Slider */}
-                <div className="relative w-full flex items-center py-1 select-none">
-                  <input
-                    type="range"
-                    min={0}
-                    max={clipDuration}
-                    step={0.05}
-                    value={Number(effectiveCurrentTime.toFixed(2))}
-                    onPointerDown={() => {
-                      isScrubbingRef.current = true;
-                      setIsScrubbing(true);
-                    }}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      if (!isNaN(val)) {
-                        isScrubbingRef.current = true;
-                        setScrubTime(val);
-                        setCurrentTime(val);
-                      }
-                    }}
-                    onPointerUp={(e) => {
-                      const val = parseFloat((e.target as HTMLInputElement).value);
-                      isScrubbingRef.current = false;
-                      setIsScrubbing(false);
-                      setScrubTime(null);
-                      if (!isNaN(val)) handleSeekCommit(val);
-                    }}
-                    className="w-full h-2 rounded-full appearance-none cursor-pointer bg-[#1E2230] accent-[#10B981] focus:outline-none transition-all"
-                    style={{
-                      background: `linear-gradient(to right, #10B981 0%, #34D399 ${progressPercent}%, #1E2230 ${progressPercent}%, #1E2230 100%)`,
-                    }}
-                    title="Slide or click to seek timestamp"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-center gap-2.5 mb-2.5">
-                <button
-                  type="button"
-                  onClick={handleRestart}
-                  className="rounded-lg bg-[#1E2230] p-1.5 text-[#9AA2B6] hover:text-white transition-colors cursor-pointer"
-                  title="Restart"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={togglePlay}
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-[#10B981] text-black hover:bg-[#059669] shadow-lg transition-transform active:scale-95 cursor-pointer"
-                  title={isPlaying ? 'Pause' : 'Play'}
-                >
-                  {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 ml-0.5" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={toggleMute}
-                  className="rounded-lg bg-[#1E2230] p-1.5 text-[#9AA2B6] hover:text-white transition-colors cursor-pointer"
-                  title={isMuted ? 'Unmute Sound' : 'Mute Sound'}
-                >
-                  {isMuted ? (
-                    <VolumeX className="h-3.5 w-3.5 text-[#EF4444]" />
-                  ) : (
-                    <Volume2 className="h-3.5 w-3.5 text-[#10B981]" />
-                  )}
-                </button>
-                <div className="text-[11px] text-[#9AA2B6] tabular-nums font-medium font-mono">
-                  {effectiveCurrentTime.toFixed(1)}s / {clipDuration.toFixed(1)}s
-                </div>
-              </div>
 
               <div className="space-y-1.5">
                 <button
