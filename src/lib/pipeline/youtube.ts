@@ -76,7 +76,6 @@ export async function getYouTubeMetadata(url: string, durationSecEstimate: numbe
     const { Innertube, UniversalCache } = await import('youtubei.js');
     const yt = await Innertube.create({
       cache: new UniversalCache(false),
-      generate_session_locally: true,
     });
     const info = await yt.getBasicInfo(videoId);
     if (info.basic_info.title) title = info.basic_info.title;
@@ -88,18 +87,25 @@ export async function getYouTubeMetadata(url: string, durationSecEstimate: numbe
     if (thumbs && thumbs.length > 0) {
       thumbnailUrl = thumbs[thumbs.length - 1].url;
     }
-  } catch (_) {
-    // 2. Fallback to oEmbed if Innertube fails or is rate-limited
+  } catch (innertubeErr: any) {
+    console.warn(`[YouTube Ingestion] Innertube basic info failed for ${videoId}: ${innertubeErr.message}`);
+    // 2. Fallback to oEmbed with browser User-Agent
     const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
     try {
-      const res = await fetch(oembedUrl, { next: { revalidate: 3600 } });
+      const res = await fetch(oembedUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'application/json',
+        },
+        next: { revalidate: 3600 },
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.title) title = data.title;
         if (data.author_name) author = data.author_name;
       }
-    } catch (err) {
-      console.warn(`[YouTube Ingestion] Failed to query oEmbed for ${videoId}, using fallback metadata.`);
+    } catch (err: any) {
+      console.warn(`[YouTube Ingestion] Failed to query oEmbed for ${videoId}: ${err.message}`);
     }
   }
 
@@ -148,6 +154,8 @@ export async function extractYouTubeAudioStream(
 
   console.log(`[YouTube Ingest] Extracting audio for "${metadata.title}" (${metadata.videoId})...`);
 
+  let lastErrorMsg = '';
+
   // --------------------------------------------------------------------------
   // STRATEGY 1: Pure JavaScript / TypeScript in-memory audio extraction (youtubei.js)
   // Zero Python, zero external binaries, 100% safe on Vercel Serverless / AWS Lambda.
@@ -156,43 +164,57 @@ export async function extractYouTubeAudioStream(
     const { Innertube, UniversalCache } = await import('youtubei.js');
     const yt = await Innertube.create({
       cache: new UniversalCache(false),
-      generate_session_locally: true,
     });
 
     // Android client delivers direct, un-ciphered audio streams
-    await yt.getInfo(metadata.videoId, { client: 'ANDROID' });
-    const stream = await yt.download(metadata.videoId, {
-      type: 'audio',
-      client: 'ANDROID',
-    });
-
-    const reader = stream.getReader();
-    const chunks: Uint8Array[] = [];
-    let totalBytes = 0;
-    // 18 MB ceiling (~25 minutes of audio, comfortably under Groq Whisper 25 MB limit)
-    const MAX_AUDIO_BYTES = 18 * 1024 * 1024;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      totalBytes += value.length;
-      if (totalBytes >= MAX_AUDIO_BYTES) {
-        try { await reader.cancel(); } catch (_) {}
-        break;
+    let stream: any = null;
+    try {
+      stream = await yt.download(metadata.videoId, {
+        type: 'audio',
+        client: 'ANDROID',
+      });
+    } catch (androidErr: any) {
+      console.warn(`[YouTube Ingest] ANDROID client download failed: ${androidErr.message}, trying default client...`);
+      try {
+        stream = await yt.download(metadata.videoId, {
+          type: 'audio',
+        });
+      } catch (defaultErr: any) {
+        console.warn(`[YouTube Ingest] Default client download failed: ${defaultErr.message}`);
+        lastErrorMsg = androidErr.message || defaultErr.message;
       }
     }
 
-    if (chunks.length > 0 && totalBytes > 1024) {
-      const audioBuffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
-      console.log(`[YouTube Ingest] Successfully extracted ${(audioBuffer.length / (1024 * 1024)).toFixed(2)} MB via YouTube.js for "${metadata.title}"`);
-      return {
-        audioBuffer,
-        filename: `youtube_${metadata.videoId}.m4a`,
-        metadata,
-      };
+    if (stream) {
+      const reader = stream.getReader();
+      const chunks: Uint8Array[] = [];
+      let totalBytes = 0;
+      // 18 MB ceiling (~25 minutes of audio, comfortably under Groq Whisper 25 MB limit)
+      const MAX_AUDIO_BYTES = 18 * 1024 * 1024;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        totalBytes += value.length;
+        if (totalBytes >= MAX_AUDIO_BYTES) {
+          try { await reader.cancel(); } catch (_) {}
+          break;
+        }
+      }
+
+      if (chunks.length > 0 && totalBytes > 1024) {
+        const audioBuffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+        console.log(`[YouTube Ingest] Successfully extracted ${(audioBuffer.length / (1024 * 1024)).toFixed(2)} MB via YouTube.js for "${metadata.title}"`);
+        return {
+          audioBuffer,
+          filename: `youtube_${metadata.videoId}.m4a`,
+          metadata,
+        };
+      }
     }
   } catch (innertubeErr: any) {
+    lastErrorMsg = innertubeErr.message;
     console.warn(`[YouTube Ingest] Pure-JS YouTube.js extraction failed: ${innertubeErr.message}. Attempting fallbacks...`);
   }
 
@@ -285,8 +307,9 @@ export async function extractYouTubeAudioStream(
   // --------------------------------------------------------------------------
   // STRATEGY 4: Friendly, actionable error message if all strategies are exhausted
   // --------------------------------------------------------------------------
+  const reasonSuffix = lastErrorMsg ? ` (${lastErrorMsg})` : '';
   throw new Error(
-    `Unable to stream audio for YouTube video "${metadata.title}". ` +
+    `Unable to stream audio for YouTube video "${metadata.title}"${reasonSuffix}. ` +
     `YouTube's servers may be temporarily restricting automated playback for this video. ` +
     `Please download the audio or video file and upload it directly in the "Upload File" tab for instant clip generation.`
   );

@@ -2,7 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   // Keep native binary packages out of the bundle — they are loaded by Node.js at runtime
-  serverExternalPackages: ['@ffmpeg-installer/ffmpeg', 'fluent-ffmpeg'],
+  serverExternalPackages: ['youtubei.js', '@ffmpeg-installer/ffmpeg', 'fluent-ffmpeg'],
   async headers() {
     return [
       {

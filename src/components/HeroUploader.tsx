@@ -670,6 +670,18 @@ export default function HeroUploader() {
             </div>
 
             <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+              {activeTab === 'url' && errorMessage.includes('Upload File') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('upload');
+                    setErrorMessage(null);
+                  }}
+                  className="rounded-lg bg-white px-3.5 py-1.5 text-xs font-bold text-black hover:bg-[#E5E5E5] transition-colors cursor-pointer"
+                >
+                  Switch to Upload File Tab →
+                </button>
+              )}
               {requiresAuth && (
                 <button
                   type="button"
