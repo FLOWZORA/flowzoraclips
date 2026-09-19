@@ -22,7 +22,7 @@ def main():
     ydl_opts = {
         'format': 'ba[ext=m4a]/ba[ext=mp3]/ba',
         'outtmpl': outtmpl,
-        'max_filesize': 25 * 1024 * 1024,
+        'max_filesize': 20 * 1024 * 1024,
         'quiet': True,
         'no_warnings': True,
         'noprogress': True,

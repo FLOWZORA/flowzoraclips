@@ -13,6 +13,9 @@ import {
 } from '@/lib/billing/credits';
 import { checkSpendKillSwitch, recordApiSpend } from '@/lib/billing/kill-switch';
 
+// Allow up to 60s runtime for audio streaming, Groq transcription & Gemini highlight ranking
+export const maxDuration = 60;
+
 /**
  * GET: Quick metadata preview when user enters a YouTube URL.
  */

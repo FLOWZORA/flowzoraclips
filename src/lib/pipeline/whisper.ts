@@ -41,13 +41,13 @@ export async function transcribeAudio(
     );
   }
 
-  // Groq hard limit is 25 MB. Surface a clear error rather than silently using demo data.
-  const GROQ_MAX_BYTES = 24 * 1024 * 1024; // 24 MB safety margin
+  // Groq / OpenAI Whisper limit is 25 MB.
+  const GROQ_MAX_BYTES = 25 * 1024 * 1024;
   if (isGroq && audioBuffer.length > GROQ_MAX_BYTES) {
     const sizeMB = (audioBuffer.length / (1024 * 1024)).toFixed(1);
     throw new Error(
       `Your file is ${sizeMB} MB, which exceeds Groq's 25 MB audio limit. ` +
-      `Please compress your video to a smaller file or trim it to under ~30 minutes before uploading.`
+      `Please compress your video to a smaller file or trim it to under ~25 minutes before uploading.`
     );
   }
 
