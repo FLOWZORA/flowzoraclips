@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
     let audioBuffer: Buffer | undefined;
     let filename: string = 'audio.mp3';
     let estimatedDurationSec = 300; // default 5 min for sample
+    let sourceVideoKey: string | null = null;
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await req.formData();
@@ -34,6 +35,15 @@ export async function POST(req: NextRequest) {
       const userParam = formData.get('userId') as string;
       if (userParam) activeUserId = userParam;
 
+      // Purge any stale clip exports from previous runs so new downloads only use this video
+      try {
+        for (const k of inMemoryR2.keys()) {
+          if (k.startsWith('flowzora_') || k.startsWith('exports/')) {
+            inMemoryR2.delete(k);
+          }
+        }
+      } catch (_) {}
+
       if (file) {
         const arrayBuf = await file.arrayBuffer();
         let rawBuffer = Buffer.from(arrayBuf);
@@ -41,10 +51,13 @@ export async function POST(req: NextRequest) {
 
         // If this is a video file, cache the original video so it can be cropped and downloaded as MP4!
         if (isVideoFile(filename)) {
-          console.log(`[API] Video file detected (${(rawBuffer.length / 1048576).toFixed(1)} MB). Caching for export and extracting audio...`);
+          sourceVideoKey = `source_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          console.log(`[API] Video file detected (${(rawBuffer.length / 1048576).toFixed(1)} MB). Caching for export as "${sourceVideoKey}"...`);
+          inMemoryR2.set(sourceVideoKey, { buffer: rawBuffer, contentType: 'video/mp4', uploadedAt: new Date().toISOString() });
           inMemoryR2.set('latest_source.mp4', { buffer: rawBuffer, contentType: 'video/mp4', uploadedAt: new Date().toISOString() });
           try {
             fs.writeFileSync(path.join(os.tmpdir(), 'flowzora_latest_source.mp4'), rawBuffer);
+            fs.writeFileSync(path.join(os.tmpdir(), `${sourceVideoKey}.mp4`), rawBuffer);
           } catch (_) {}
           try {
             const uploadsDir = path.resolve(process.cwd(), 'public/media/uploads');
@@ -59,7 +72,6 @@ export async function POST(req: NextRequest) {
             console.log(`[API] Audio extracted: ${(audioBuffer.length / 1048576).toFixed(1)} MB MP3`);
           } catch (extractErr: any) {
             console.error('[API] Audio extraction failed:', extractErr.message);
-            // Surface the error to the user instead of falling back silently
             return NextResponse.json(
               { success: false, error: `Audio extraction failed: ${extractErr.message}` },
               { status: 422 }
@@ -70,7 +82,6 @@ export async function POST(req: NextRequest) {
         }
 
         // Estimate duration: MP3 at 64kbps is ~0.5 MB/min; raw video ~10-50 MB/min
-        // Use 1 MB/min as a safe lower bound
         estimatedDurationSec = Math.max(30, Math.min(3600, Math.round((file.size / (1024 * 1024)) * 60)));
       }
     } else {
@@ -81,12 +92,32 @@ export async function POST(req: NextRequest) {
       if (body.durationSec) estimatedDurationSec = Number(body.durationSec);
       filename = body.filename || 'media.mp4';
 
+      // Purge stale clip exports
+      try {
+        for (const k of inMemoryR2.keys()) {
+          if (k.startsWith('flowzora_') || k.startsWith('exports/')) {
+            inMemoryR2.delete(k);
+          }
+        }
+      } catch (_) {}
+
       if (body.fileKey) {
         console.log(`[API] Fetching file from R2 key: ${body.fileKey}`);
         const r2Buffer = await getBufferFromR2(body.fileKey);
         if (r2Buffer && r2Buffer.length > 0) {
           if (isVideoFile(filename)) {
-            console.log(`[API] Video file from R2 detected (${(r2Buffer.length / 1048576).toFixed(1)} MB). Extracting audio...`);
+            console.log(`[API] Video file from R2 detected (${(r2Buffer.length / 1048576).toFixed(1)} MB). Caching for export...`);
+            inMemoryR2.set(body.fileKey, { buffer: r2Buffer, contentType: 'video/mp4', uploadedAt: new Date().toISOString() });
+            inMemoryR2.set('latest_source.mp4', { buffer: r2Buffer, contentType: 'video/mp4', uploadedAt: new Date().toISOString() });
+            try {
+              fs.writeFileSync(path.join(os.tmpdir(), 'flowzora_latest_source.mp4'), r2Buffer);
+            } catch (_) {}
+            try {
+              const uploadsDir = path.resolve(process.cwd(), 'public/media/uploads');
+              if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+              fs.writeFileSync(path.join(uploadsDir, 'latest_source.mp4'), r2Buffer);
+            } catch (_) {}
+
             try {
               const extracted = await extractAudioBuffer(r2Buffer, filename);
               audioBuffer = extracted.audioBuffer;
@@ -171,6 +202,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       data: result,
+      sourceVideoKey: sourceVideoKey || 'latest_source.mp4',
       billing: {
         creditsRemaining: balanceAfterDeduct,
         jobId: videoJobId,

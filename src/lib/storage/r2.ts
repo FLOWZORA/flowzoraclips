@@ -78,9 +78,9 @@ export async function getPresignedUploadUrl({
     };
   }
 
-  // Simulated presigned upload URL for local dev
-  const simulatedUploadUrl = `http://localhost:3000/api/upload/simulate-upload?key=${encodeURIComponent(fileKey)}`;
-  const publicUrl = `http://localhost:3000/api/upload/simulate-view?key=${encodeURIComponent(fileKey)}`;
+  // Simulated presigned upload URL for local dev and preview
+  const simulatedUploadUrl = `/api/upload/simulate-upload?key=${encodeURIComponent(fileKey)}`;
+  const publicUrl = `/api/upload/simulate-view?key=${encodeURIComponent(fileKey)}`;
 
   return {
     uploadUrl: simulatedUploadUrl,

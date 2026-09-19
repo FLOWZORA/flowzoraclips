@@ -39,18 +39,21 @@ export default function HeroUploader() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [sourceMediaUrl, setSourceMediaUrl] = useState<string>('');
   const [sourceMediaType, setSourceMediaType] = useState<'video' | 'audio'>('video');
+  const [sourceVideoKey, setSourceVideoKey] = useState<string>('');
 
   React.useEffect(() => {
     if (selectedFile) {
       const url = URL.createObjectURL(selectedFile);
       setSourceMediaUrl(url);
       setSourceMediaType(selectedFile.type.startsWith('video') ? 'video' : 'audio');
+      setSourceVideoKey('');
       return () => {
         URL.revokeObjectURL(url);
       };
     } else {
       setSourceMediaUrl('');
       setSourceMediaType('video');
+      setSourceVideoKey('');
     }
   }, [selectedFile]);
 
@@ -374,6 +377,12 @@ export default function HeroUploader() {
           dedupedCount: d.rankedResult.dedupedCount,
         });
         setShowResults(true);
+
+        if (json.sourceVideoKey) {
+          setSourceVideoKey(json.sourceVideoKey);
+        } else if (d?.sourceVideoKey) {
+          setSourceVideoKey(d.sourceVideoKey);
+        }
 
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new Event('flowzora_auth_changed'));
@@ -948,7 +957,7 @@ export default function HeroUploader() {
                             <span className="hidden xs:inline">Social</span>
                           </button>
                           <a
-                            href={`/api/export/render?clipId=${clip.id}&download=true&format=${aspectRatio}&startTime=${clip.startTime}&endTime=${clip.endTime}&sourceVideoUrl=${encodeURIComponent(sourceMediaUrl || '')}&fitMode=fit`}
+                            href={`/api/export/render?clipId=${clip.id}&download=true&format=${aspectRatio}&startTime=${clip.startTime}&endTime=${clip.endTime}&sourceVideoUrl=${encodeURIComponent(sourceMediaUrl || '')}${sourceVideoKey ? `&sourceVideoKey=${encodeURIComponent(sourceVideoKey)}` : ''}&fitMode=fit`}
                             download={`flowzora_${clip.id}_${aspectRatio.replace(':', 'x')}.mp4`}
                             className="flex items-center justify-center gap-1 rounded-md border border-[#262626] bg-[#111111] px-3 py-2 text-xs font-medium text-[#EDEDED] hover:border-[#383838] transition-colors min-h-[38px]"
                             title={`Download ${aspectRatio} MP4`}
@@ -1016,6 +1025,7 @@ export default function HeroUploader() {
           onClose={() => setPreviewClip(null)}
           sourceMediaUrl={sourceMediaUrl}
           sourceMediaType={sourceMediaType}
+          sourceVideoKey={sourceVideoKey}
         />
       )}
 

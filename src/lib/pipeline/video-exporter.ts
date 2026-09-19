@@ -2,7 +2,7 @@ import { buildVideoRenderJob, RenderJobSpecification } from './video-renderer';
 import { generateAssSubtitles } from './caption-renderer';
 import { calculateSceneAwareReframe } from './reframe';
 import { ScriptPreference, AspectRatio, CandidateClip } from './types';
-import { inMemoryR2, uploadBufferToR2 } from '../storage/r2';
+import { inMemoryR2, uploadBufferToR2, getBufferFromR2 } from '../storage/r2';
 import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
@@ -19,6 +19,7 @@ export interface ExportRenderOptions {
   endTime: number;
   sourceVideoUrl?: string;
   sourceVideoPath?: string;
+  sourceVideoKey?: string;
   scriptPreference?: ScriptPreference;
   format?: '9:16' | '1:1' | '16:9';
   fitMode?: 'fit' | 'crop';
@@ -65,6 +66,7 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
     startTime,
     endTime,
     sourceVideoUrl = '',
+    sourceVideoKey = '',
     scriptPreference = 'romanized',
     format = '9:16',
     userId = 'demo-user-1',
@@ -118,29 +120,53 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
     mockClip
   );
 
-  // Resolve input video source from all possible local and in-memory caches
+  // Resolve input video source strictly from genuine user-uploaded buffers and caches
   let resolvedInputPath: string | null = null;
   if (options.sourceVideoPath && fs.existsSync(options.sourceVideoPath)) {
     resolvedInputPath = options.sourceVideoPath;
   }
 
   const tmpSourcePath = path.join(os.tmpdir(), 'flowzora_latest_source.mp4');
-  if (!resolvedInputPath && fs.existsSync(tmpSourcePath)) {
-    resolvedInputPath = tmpSourcePath;
-  }
 
-  const uploadsPath = path.resolve(process.cwd(), 'public/media/uploads/latest_source.mp4');
-  if (!resolvedInputPath && fs.existsSync(uploadsPath)) {
-    resolvedInputPath = uploadsPath;
+  // Check specific sourceVideoKey from inMemoryR2 or Cloudflare R2
+  if (!resolvedInputPath && sourceVideoKey) {
+    let keyBuffer: Buffer | null = null;
+    const inMem = inMemoryR2.get(sourceVideoKey);
+    if (inMem?.buffer && inMem.buffer.length > 50000) {
+      keyBuffer = inMem.buffer;
+    } else {
+      keyBuffer = await getBufferFromR2(sourceVideoKey);
+    }
+    if (keyBuffer && keyBuffer.length > 50000) {
+      try {
+        fs.writeFileSync(tmpSourcePath, keyBuffer);
+        resolvedInputPath = tmpSourcePath;
+      } catch (_) {}
+    }
   }
 
   if (!resolvedInputPath && inMemoryR2.has('latest_source.mp4')) {
     const item = inMemoryR2.get('latest_source.mp4');
-    if (item?.buffer) {
+    if (item?.buffer && item.buffer.length > 50000) {
       try {
         fs.writeFileSync(tmpSourcePath, item.buffer);
         resolvedInputPath = tmpSourcePath;
       } catch (_) {}
+    }
+  }
+
+  if (!resolvedInputPath && fs.existsSync(tmpSourcePath)) {
+    const sz = fs.statSync(tmpSourcePath).size;
+    if (sz > 50000) {
+      resolvedInputPath = tmpSourcePath;
+    }
+  }
+
+  const uploadsPath = path.resolve(process.cwd(), 'public/media/uploads/latest_source.mp4');
+  if (!resolvedInputPath && fs.existsSync(uploadsPath)) {
+    const sz = fs.statSync(uploadsPath).size;
+    if (sz > 50000) {
+      resolvedInputPath = uploadsPath;
     }
   }
 
@@ -281,7 +307,7 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
         clipId,
         format,
         status: 'completed',
-        downloadUrl: `/api/export/render?clipId=${clipId}&download=true&format=${format}&startTime=${startTime}&endTime=${endTime}&sourceVideoUrl=${encodeURIComponent(sourceVideoUrl)}&t=${Date.now()}`,
+        downloadUrl: `/api/export/render?clipId=${clipId}&download=true&format=${format}&startTime=${startTime}&endTime=${endTime}&sourceVideoUrl=${encodeURIComponent(sourceVideoUrl)}${sourceVideoKey ? `&sourceVideoKey=${encodeURIComponent(sourceVideoKey)}` : ''}&t=${Date.now()}`,
         fileKey,
         renderTimeSec: Math.max(1, Math.round(durationSec * 0.2)),
         ffmpegCommand: `ffmpeg ${args.join(' ')}`,
@@ -311,7 +337,7 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
     clipId,
     format,
     status: 'completed',
-    downloadUrl: `/api/export/render?clipId=${clipId}&download=true&format=${format}&startTime=${startTime}&endTime=${endTime}&sourceVideoUrl=${encodeURIComponent(sourceVideoUrl)}`,
+    downloadUrl: `/api/export/render?clipId=${clipId}&download=true&format=${format}&startTime=${startTime}&endTime=${endTime}&sourceVideoUrl=${encodeURIComponent(sourceVideoUrl)}${sourceVideoKey ? `&sourceVideoKey=${encodeURIComponent(sourceVideoKey)}` : ''}&t=${Date.now()}`,
     fileKey,
     renderTimeSec: Math.max(2, Math.round(durationSec * 0.25)),
     ffmpegCommand: jobSpec.command,

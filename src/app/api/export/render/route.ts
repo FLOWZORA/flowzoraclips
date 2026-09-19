@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
     const startTime = Number(searchParams.get('startTime') || 0);
     const endTime = Number(searchParams.get('endTime') || 25);
     const sourceVideoUrl = searchParams.get('sourceVideoUrl') || '';
+    const sourceVideoKey = searchParams.get('sourceVideoKey') || '';
 
     // Include startTime and endTime so each clip and nudge variation has a unique filename and never serves stale clips
     const filename = `flowzora_${clipId}_${Math.round(startTime)}s-${Math.round(endTime)}s_${format.replace(':', 'x')}.mp4`;
@@ -40,11 +41,11 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 2. Check in-memory R2 cache for valid buffer (> 50KB)
+    // 2. Check in-memory R2 cache for valid buffer (> 50KB) strictly matching this exact clip & timing
     if (!fileBuffer) {
       for (const [key, item] of inMemoryR2.entries()) {
         if (
-          (key === filename || (key.includes(clipId) && key.includes(format.replace(':', 'x')))) &&
+          key === filename &&
           item.buffer &&
           item.buffer.length > 50000
         ) {
@@ -63,6 +64,7 @@ export async function GET(req: NextRequest) {
         format,
         fitMode,
         sourceVideoUrl,
+        sourceVideoKey,
       });
 
       if (fs.existsSync(localExportPath)) {
@@ -76,7 +78,7 @@ export async function GET(req: NextRequest) {
       if (!fileBuffer) {
         for (const [key, item] of inMemoryR2.entries()) {
           if (
-            (key === filename || (key.includes(clipId) && key.includes(format.replace(':', 'x')))) &&
+            key === filename &&
             item.buffer &&
             item.buffer.length > 50000
           ) {
@@ -87,7 +89,13 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 4. Source Video Fallback: Check cached uploaded source video (no sample video fallback)
+    // 4. Source Video Fallback: If trimming failed, provide user's uploaded source video (never a generic sample)
+    if ((!fileBuffer || fileBuffer.length <= 50000) && sourceVideoKey) {
+      const stored = inMemoryR2.get(sourceVideoKey);
+      if (stored?.buffer && stored.buffer.length > 50000) {
+        fileBuffer = stored.buffer;
+      }
+    }
     if (!fileBuffer || fileBuffer.length <= 50000) {
       const tmpSourcePath = path.join(os.tmpdir(), 'flowzora_latest_source.mp4');
       if (fs.existsSync(tmpSourcePath)) {
@@ -140,6 +148,7 @@ export async function POST(req: NextRequest) {
       fitMode = 'fit',
       userId = 'demo-user-1',
       sourceVideoUrl = '',
+      sourceVideoKey = '',
     } = body;
 
     if (!clipId) {
@@ -158,6 +167,7 @@ export async function POST(req: NextRequest) {
       fitMode,
       userId,
       sourceVideoUrl,
+      sourceVideoKey,
     });
 
     return NextResponse.json({

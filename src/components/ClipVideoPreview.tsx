@@ -32,6 +32,7 @@ interface ClipVideoPreviewProps {
   onClose?: () => void;
   sourceMediaUrl?: string;
   sourceMediaType?: 'video' | 'audio';
+  sourceVideoKey?: string;
 }
 
 export default function ClipVideoPreview({
@@ -42,6 +43,7 @@ export default function ClipVideoPreview({
   onClose,
   sourceMediaUrl = '',
   sourceMediaType = 'video',
+  sourceVideoKey = '',
 }: ClipVideoPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const ambientVideoRef = useRef<HTMLVideoElement>(null);
@@ -958,6 +960,7 @@ export default function ClipVideoPreview({
           format: aspectRatio,
           fitMode: framingMode,
           sourceVideoUrl: sourceMediaUrl || '',
+          sourceVideoKey: sourceVideoKey || '',
         }),
       });
 
