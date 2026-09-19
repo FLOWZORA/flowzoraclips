@@ -274,6 +274,63 @@ async function getMetadataViaVisionOS(videoId: string): Promise<{ title?: string
   return null;
 }
 
+export async function fetchYouTubeSessionDebug(videoId: string): Promise<any> {
+  const session = await fetchYouTubeSession();
+  const payload = {
+    context: {
+      client: {
+        clientName: 'VISIONOS',
+        clientVersion: '1.02',
+        deviceMake: 'Apple',
+        deviceModel: 'RealityDevice17,1',
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
+        osName: 'visionOS',
+        osVersion: '26.5.23O471',
+        hl: 'en',
+        gl: 'US',
+        timeZone: 'UTC',
+        utcOffsetMinutes: 0,
+        visitorData: session.visitorData || undefined,
+      },
+    },
+    videoId,
+    playbackContext: {
+      contentPlaybackContext: {
+        html5Preference: 'HTML5_PREF_WANTS',
+        signatureTimestamp: 20711,
+      },
+    },
+    contentCheckOk: true,
+    racyCheckOk: true,
+  };
+
+  const res = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Youtube-Client-Name': '101',
+      'X-Youtube-Client-Version': '1.02',
+      'Origin': 'https://www.youtube.com',
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
+      ...(session.cookieHeader ? { Cookie: session.cookieHeader } : {}),
+      ...(session.visitorData ? { 'X-Goog-Visitor-Id': session.visitorData } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+  const audioFormats = (data.streamingData?.adaptiveFormats || []).filter((f: any) => f.mimeType?.includes('audio'));
+  return {
+    playerHttp: res.status,
+    hasVisitorData: !!session.visitorData,
+    playabilityStatus: data.playabilityStatus,
+    title: data.videoDetails?.title,
+    audioCount: audioFormats.length,
+    firstAudioUrl: !!audioFormats[0]?.url,
+  };
+}
+
 interface VisionOSResult {
   audioBuffer?: Buffer;
   filename?: string;

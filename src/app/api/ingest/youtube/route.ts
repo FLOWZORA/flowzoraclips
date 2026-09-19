@@ -41,9 +41,20 @@ export async function GET(req: NextRequest) {
 
     const metadata = await getYouTubeMetadata(url);
 
+    let debugInfo: any = undefined;
+    if (searchParams.get('debug') === '1') {
+      try {
+        const { fetchYouTubeSessionDebug } = await import('@/lib/pipeline/youtube');
+        debugInfo = await fetchYouTubeSessionDebug(videoId);
+      } catch (e: any) {
+        debugInfo = { error: e.message };
+      }
+    }
+
     return NextResponse.json({
       success: true,
       metadata,
+      ...(debugInfo ? { debug: debugInfo } : {}),
     });
   } catch (error: any) {
     return NextResponse.json(
