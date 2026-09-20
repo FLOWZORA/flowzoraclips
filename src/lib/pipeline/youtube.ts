@@ -647,14 +647,15 @@ const EXTRACTION_GLOBAL_TIMEOUT_MS = 7_000;
 export async function extractYouTubeAudioStream(
   url: string,
   userId: string = 'demo-user-1',
-  checkEligibility: boolean = true
+  checkEligibility: boolean = true,
+  prefetchedMetadata?: YouTubeVideoMetadata,
 ): Promise<{
   audioBuffer: Buffer;
   filename: string;
   metadata: YouTubeVideoMetadata;
 }> {
   return Promise.race<{ audioBuffer: Buffer; filename: string; metadata: YouTubeVideoMetadata }>([
-    _extractYouTubeAudioStreamInner(url, userId, checkEligibility),
+    _extractYouTubeAudioStreamInner(url, userId, checkEligibility, prefetchedMetadata),
     new Promise((_, reject) =>
       setTimeout(
         () => reject(new Error(
@@ -670,13 +671,15 @@ export async function extractYouTubeAudioStream(
 async function _extractYouTubeAudioStreamInner(
   url: string,
   userId: string = 'demo-user-1',
-  checkEligibility: boolean = true
+  checkEligibility: boolean = true,
+  prefetchedMetadata?: YouTubeVideoMetadata,
 ): Promise<{
   audioBuffer: Buffer;
   filename: string;
   metadata: YouTubeVideoMetadata;
 }> {
-  const metadata = await getYouTubeMetadata(url);
+  // Use pre-fetched metadata if provided (avoids a redundant getBasicInfo round-trip)
+  const metadata = prefetchedMetadata ?? await getYouTubeMetadata(url);
 
   // Validate free tier hard cap (<=60 min in beta) if requested
   if (checkEligibility) {

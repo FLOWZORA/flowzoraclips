@@ -137,8 +137,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 5. Extract Audio Stream
-    const { audioBuffer, filename } = await extractYouTubeAudioStream(url, activeUserId, false);
+    // 5. Extract Audio Stream (pass pre-fetched metadata to avoid redundant getBasicInfo call)
+    const { audioBuffer, filename } = await extractYouTubeAudioStream(url, activeUserId, false, metadata);
 
     // 6. Deduct 1 credit
     const balanceAfterDeduct = await deductCredit(activeUserId, videoJobId);
