@@ -26,8 +26,12 @@ const PORT = process.env.PORT || 3001;
 // Prefer the token scoped to this worker; fall back to the shared one so an
 // existing deployment keeps authenticating after an upgrade. The Vercel side
 // (src/lib/pipeline/youtube.ts) resolves its token in the same order.
-const WORKER_SECRET_TOKEN =
-  process.env.YOUTUBE_WORKER_TOKEN || process.env.WORKER_SECRET_TOKEN || '';
+// .trim() is load-bearing: dashboard UIs (Render's value field is a textarea)
+// routinely store a trailing newline with a pasted secret, and an untrimmed
+// compare then fails with a 401 that looks exactly like a wrong token.
+const WORKER_SECRET_TOKEN = (
+  process.env.YOUTUBE_WORKER_TOKEN || process.env.WORKER_SECRET_TOKEN || ''
+).trim();
 
 // Max audio size: 20MB cap — covers ~30 minutes of podcast audio
 const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
@@ -45,7 +49,7 @@ app.get('/health', (req, res) => {
 // ── Auth middleware ───────────────────────────────────────────────────────────
 function requireAuth(req, res, next) {
   if (!WORKER_SECRET_TOKEN) return next(); // open if no secret set (dev mode)
-  const auth = req.headers['authorization'] || '';
+  const auth = (req.headers['authorization'] || '').trim();
   if (auth === `Bearer ${WORKER_SECRET_TOKEN}`) return next();
   res.status(401).json({ error: 'Unauthorized' });
 }

@@ -875,7 +875,7 @@ async function _extractYouTubeAudioStreamInner(
   // the ffmpeg render worker (video-exporter.ts), so rotating it would take
   // video export down too; a dedicated var lets this service hold a strong
   // secret independently. Falls back to the shared one when unset.
-  const workerToken = process.env.YOUTUBE_WORKER_TOKEN || process.env.WORKER_SECRET_TOKEN;
+  const workerToken = (process.env.YOUTUBE_WORKER_TOKEN || process.env.WORKER_SECRET_TOKEN || '').trim();
   if (workerUrl) {
     try {
       console.log(`[YouTube Ingest] Attempting audio extraction via Railway worker: ${workerUrl}...`);
