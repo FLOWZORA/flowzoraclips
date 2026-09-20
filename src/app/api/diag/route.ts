@@ -15,39 +15,55 @@ export async function GET(req: NextRequest) {
     env: process.env.NODE_ENV,
   };
 
-  const tiers: Array<'ANDROID' | 'MUSIC' | 'MWEB'> = ['ANDROID', 'MUSIC', 'MWEB'];
+  const { ClientType, Session, Innertube, UniversalCache } = await import('youtubei.js');
 
-  for (const t of tiers) {
+  // Fetch real visitorData from YouTube official endpoint
+  let visitorData: string | undefined;
+  try {
+    const vRes = await fetch('https://www.youtube.com/youtubei/v1/visitor_id', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context: { client: { clientName: 'WEB', clientVersion: '2.20240401.01.00' } } })
+    });
+    const vData = await vRes.json();
+    visitorData = vData?.responseContext?.visitorData;
+    results.visitorDataObtained = !!visitorData;
+  } catch (vErr: any) {
+    results.visitorDataError = vErr.message;
+  }
+
+  const candidateClients: Array<{ name: string; clientType: any; deviceCategory?: any }> = [
+    { name: 'ANDROID_with_visitor', clientType: ClientType.ANDROID, deviceCategory: 'mobile' },
+    { name: 'MUSIC_with_visitor', clientType: ClientType.MUSIC, deviceCategory: undefined },
+    { name: 'MWEB_with_visitor', clientType: ClientType.MWEB, deviceCategory: undefined },
+    { name: 'ANDROID_VR', clientType: ClientType.ANDROID_VR, deviceCategory: undefined },
+    { name: 'IOS', clientType: ClientType.IOS, deviceCategory: 'mobile' },
+  ];
+
+  for (const c of candidateClients) {
     try {
-      const yt = await getInnertubeClient(t);
+      const session = await Session.create({
+        device_category: c.deviceCategory,
+        client_type: c.clientType,
+        visitor_data: visitorData,
+        cookie: 'PREF=tz=UTC&hl=en;',
+        cache: new UniversalCache(false),
+      });
+      const yt = new Innertube(session);
       const basic = await yt.getBasicInfo(videoId);
-      results[`${t}_basicInfo`] = {
+      const stream = await yt.download(videoId, { type: 'audio' });
+      const reader = stream.getReader();
+      const { value } = await reader.read();
+      await reader.cancel();
+      results[c.name] = {
         success: true,
+        chunkBytes: value ? value.length : 0,
         title: basic?.basic_info?.title,
-        duration: basic?.basic_info?.duration,
       };
-
-      try {
-        const stream = await yt.download(videoId, { type: 'audio' });
-        const reader = stream.getReader();
-        const { value } = await reader.read();
-        await reader.cancel();
-        results[`${t}_download`] = {
-          success: true,
-          chunkBytes: value ? value.length : 0,
-        };
-      } catch (dlErr: any) {
-        results[`${t}_download`] = {
-          success: false,
-          error: dlErr.message,
-          stack: dlErr.stack,
-        };
-      }
     } catch (err: any) {
-      results[`${t}_basicInfo`] = {
+      results[c.name] = {
         success: false,
         error: err.message,
-        stack: err.stack,
       };
     }
   }
