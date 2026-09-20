@@ -691,25 +691,103 @@ async function _extractYouTubeAudioStreamInner(
   let lastErrorMsg = '';
 
   // --------------------------------------------------------------------------
-  // STRATEGY 0: Multi-Tier Innertube Client Sessions with node:vm deciphering
-  // Tiers: 1) Android Mobile -> 2) YouTube Music (WEB_REMIX) -> 3) Mobile Web (MWEB)
-  // Bypasses YouTube's bot-detection, login requirements, and datacenter IP blocks.
-  // Directly streams deciphered audio in-memory, 100% Serverless compatible on Vercel.
+  // STRATEGY 0: IOS Two-Step + Fallback Tiers
+  //
+  // Step A (IOS primary): getBasicInfo returns a pre-deciphered CDN URL.
+  //   - Try direct CDN fetch first (fast: ~50-100ms, works when Vercel IP not blocked).
+  //   - If YouTube returns 403/429, retry the SAME URL through proxy CDN (bypasses IP block).
+  //   This keeps proxy off the happy path (proxy = 7-8s), uses it only when needed.
+  //
+  // Step B (ANDROID/MWEB fallback): yt.download() for any remaining tiers.
   // --------------------------------------------------------------------------
   await ensurePlatformEvaluator();
 
-  const clientTiers: Array<{ name: string; type: 'IOS' | 'ANDROID' | 'MUSIC' | 'MWEB' }> = [
-    { name: 'iOS Mobile', type: 'IOS' },       // Tested: works from datacenter IPs, no proxy needed
-    { name: 'Android Mobile', type: 'ANDROID' }, // Fallback
-    { name: 'Mobile Web', type: 'MWEB' },        // Last resort
+  const MAX_AUDIO_BYTES = 12 * 1024 * 1024; // 12 MB ceiling (~22 min audio)
+
+  // ── IOS Primary: Two-Step Pre-Deciphered URL Strategy ──
+  try {
+    console.log(`[YouTube Ingest] Attempting iOS two-step strategy for "${metadata.title}"...`);
+    const iosResult = await Promise.race<{ buffer: Buffer; filename: string } | null>([
+      (async () => {
+        const yt = await getInnertubeClient('IOS');
+        const info = await yt.getBasicInfo(metadata.videoId);
+        const formats: any[] =
+          info?.streaming_data?.adaptive_formats ||
+          info?.streaming_data?.formats ||
+          [];
+        // Prefer audio-only adaptive format; fallback to any audio format
+        const audioFmt =
+          formats.find((f: any) => f.has_audio && !f.has_video) ||
+          formats.find((f: any) => f.has_audio);
+
+        if (!audioFmt?.url) {
+          console.warn(`[YouTube Ingest] iOS: no pre-deciphered URL available, falling through.`);
+          return null;
+        }
+
+        const cdnUrl = audioFmt.url as string;
+        // Append byte-range so we get a bounded chunk (avoids streaming entire file)
+        const rangedUrl = cdnUrl.includes('?')
+          ? `${cdnUrl}&range=0-${MAX_AUDIO_BYTES}`
+          : `${cdnUrl}?range=0-${MAX_AUDIO_BYTES}`;
+
+        // Try 1: Direct CDN fetch (50-100ms when not blocked)
+        let cdnResp = await fetch(rangedUrl, {
+          headers: {
+            'User-Agent': 'com.google.ios.youtube/19.16.3 CFNetwork/1410.0.3 Darwin/22.6.0',
+          },
+        });
+        console.log(`[YouTube Ingest] iOS CDN direct: HTTP ${cdnResp.status}`);
+
+        // Try 2: Proxy CDN fetch if Vercel's IP is blocked (403/429/451)
+        if (!cdnResp.ok && [403, 429, 451].includes(cdnResp.status)) {
+          console.warn(`[YouTube Ingest] iOS CDN direct blocked (${cdnResp.status}), trying proxy CDN...`);
+          const { fetch: undiciFetch } = await import('undici');
+          const agent = await getProxyAgent();
+          if (agent) {
+            // @ts-ignore
+            cdnResp = await undiciFetch(rangedUrl, {
+              dispatcher: agent,
+              headers: {
+                'User-Agent': 'com.google.ios.youtube/19.16.3 CFNetwork/1410.0.3 Darwin/22.6.0',
+              },
+            }) as unknown as Response;
+            console.log(`[YouTube Ingest] iOS CDN proxy: HTTP ${cdnResp.status}`);
+          }
+        }
+
+        if (!cdnResp.ok) return null;
+
+        const arrayBuf = await cdnResp.arrayBuffer();
+        if (arrayBuf.byteLength < 1024) return null;
+        const rawBuffer = Buffer.from(arrayBuf);
+        console.log(`[YouTube Ingest] iOS CDN: ${(rawBuffer.length / 1024 / 1024).toFixed(2)} MB fetched`);
+        return transcodeToMp3IfPossible(rawBuffer, metadata.videoId);
+      })(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5_000)), // 5s ceiling for IOS two-step
+    ]);
+
+    if (iosResult) {
+      console.log(`[YouTube Ingest] Successfully extracted via iOS two-step for "${metadata.title}"`);
+      return { audioBuffer: iosResult.buffer, filename: iosResult.filename, metadata };
+    }
+    console.warn(`[YouTube Ingest] iOS two-step returned no data. Trying fallback tiers...`);
+  } catch (iosErr: any) {
+    lastErrorMsg = iosErr.message;
+    console.warn(`[YouTube Ingest] iOS two-step failed: ${iosErr.message}. Trying fallback tiers...`);
+  }
+
+  // ── Fallback Tiers: ANDROID and MWEB via yt.download() ──
+  const fallbackTiers: Array<{ name: string; type: 'ANDROID' | 'MWEB' }> = [
+    { name: 'Android Mobile', type: 'ANDROID' },
+    { name: 'Mobile Web', type: 'MWEB' },
   ];
 
-  /** Per-tier ceiling: abort a hanging Innertube download quickly */
   const TIER_TIMEOUT_MS = 2_500;
 
-  for (const tier of clientTiers) {
+  for (const tier of fallbackTiers) {
     try {
-      console.log(`[YouTube Ingest] Attempting ${tier.name} audio stream for "${metadata.title}" (${metadata.videoId})...`);
+      console.log(`[YouTube Ingest] Fallback: ${tier.name} for "${metadata.title}"...`);
 
       const tierResult = await Promise.race<{ buffer: Buffer; filename: string } | null>([
         (async () => {
@@ -721,8 +799,6 @@ async function _extractYouTubeAudioStreamInner(
           const reader = stream.getReader();
           const chunks: Uint8Array[] = [];
           let totalBytes = 0;
-          // 12 MB ceiling (~18-22 minutes of audio, comfortably under Groq Whisper 25 MB limit)
-          const MAX_AUDIO_BYTES = 12 * 1024 * 1024;
 
           while (true) {
             const { done, value } = await reader.read();
