@@ -237,7 +237,12 @@ export async function getInnertubeClient(type: 'MWEB' | 'ANDROID' | 'IOS' | 'WEB
         deviceCategory = undefined;
       }
 
-      const rawCookie = process.env.YOUTUBE_COOKIE || process.env.YT_COOKIE || undefined;
+      const rawCookie =
+        process.env.YOUTUBE_COOKIE ||
+        process.env.YOUTUBE_COOKIES ||
+        process.env.YT_COOKIE ||
+        process.env.YT_COOKIES ||
+        undefined;
       const cookie = normalizeYouTubeCookie(rawCookie) || undefined;
 
       const session = await Session.create({
@@ -831,7 +836,11 @@ async function _extractYouTubeAudioStreamInner(
   if (workerUrl) {
     try {
       console.log(`[YouTube Ingest] Attempting audio extraction via worker: ${workerUrl}...`);
-      const rawCookie = process.env.YOUTUBE_COOKIE || process.env.YT_COOKIE;
+      const rawCookie =
+        process.env.YOUTUBE_COOKIE ||
+        process.env.YOUTUBE_COOKIES ||
+        process.env.YT_COOKIE ||
+        process.env.YT_COOKIES;
       const cookie = normalizeYouTubeCookie(rawCookie);
 
       const workerRes = await fetch(`${workerUrl.replace(/\/$/, '')}/extract-audio`, {

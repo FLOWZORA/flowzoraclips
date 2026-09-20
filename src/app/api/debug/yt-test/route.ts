@@ -9,14 +9,25 @@ export const maxDuration = 30;
  * GET /api/debug/yt-test?v=VIDEO_ID
  */
 export async function GET(req: NextRequest) {
-  const videoId = req.nextUrl.searchParams.get('v') || 'QGLvwQX-Aos'; // default: Druski / Theo Von #489
-  const rawCookie = process.env.YOUTUBE_COOKIE || process.env.YT_COOKIE || '';
+  const detectedEnvKey =
+    process.env.YOUTUBE_COOKIE ? 'YOUTUBE_COOKIE' :
+    process.env.YOUTUBE_COOKIES ? 'YOUTUBE_COOKIES' :
+    process.env.YT_COOKIE ? 'YT_COOKIE' :
+    process.env.YT_COOKIES ? 'YT_COOKIES' : 'none';
+
+  const rawCookie =
+    process.env.YOUTUBE_COOKIE ||
+    process.env.YOUTUBE_COOKIES ||
+    process.env.YT_COOKIE ||
+    process.env.YT_COOKIES ||
+    '';
   const normalizedCookie = normalizeYouTubeCookie(rawCookie);
 
   const results: Record<string, any> = {
     videoId,
     timestamp: new Date().toISOString(),
     cookieDiagnostics: {
+      detectedEnvKey,
       rawLength: rawCookie.length,
       normalizedLength: normalizedCookie.length,
       hasCookie: normalizedCookie.length > 0,
