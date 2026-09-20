@@ -208,6 +208,52 @@ async function extractAudioBuffer(videoUrl, cookieString) {
   });
 }
 
+// ── GET /debug-cookie ─────────────────────────────────────────────────────────
+// Reports how the configured cookie blob PARSES, never what it contains.
+// Cookie names are structural (SID, HSID...) and are what diagnose an auth
+// failure; values are secrets and are never read, logged, or returned.
+app.get('/debug-cookie', requireAuth, (req, res) => {
+  const raw = process.env.YOUTUBE_COOKIE || process.env.YOUTUBE_COOKIES || '';
+  if (!raw) return res.json({ configured: false });
+
+  const detected =
+    raw.trim().startsWith('[') ? 'json'
+    : (raw.includes('\t') || raw.includes('# Netscape') || raw.includes('#HttpOnly_')) ? 'netscape'
+    : (raw.includes('=') && !raw.includes('\n')) ? 'semicolon'
+    : 'unknown';
+
+  let names = [];
+  let parseError = null;
+  try {
+    const cp = writeCookieFile(raw);
+    const written = fs.readFileSync(cp, 'utf8');
+    // A valid Netscape row is 7 TAB-separated fields; the name is field 6.
+    names = written
+      .split('\n')
+      .filter((l) => l && !l.startsWith('#'))
+      .map((l) => l.split('\t'))
+      .filter((f) => f.length >= 7)
+      .map((f) => f[5]);
+    fs.unlinkSync(cp);
+  } catch (e) {
+    parseError = e.message;
+  }
+
+  // Cookies YouTube needs for a genuinely authenticated session.
+  const required = ['SID', 'HSID', 'SSID', 'APISID', 'SAPISID', '__Secure-1PSID'];
+  res.json({
+    configured: true,
+    rawLength: raw.length,
+    detectedFormat: detected,
+    containsTabs: raw.includes('\t'),
+    containsNewlines: raw.includes('\n'),
+    cookiesParsed: names.length,
+    cookieNames: names,
+    missingAuthCookies: required.filter((r) => !names.includes(r)),
+    parseError,
+  });
+});
+
 // ── POST /extract-audio ───────────────────────────────────────────────────────
 app.post('/extract-audio', requireAuth, async (req, res) => {
   const { url, videoId, cookie } = req.body;
