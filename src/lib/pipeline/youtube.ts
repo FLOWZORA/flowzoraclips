@@ -55,29 +55,75 @@ export function formatDuration(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-let androidInnertubePromise: Promise<any> | null = null;
+let isEvaluatorConfigured = false;
 
 /**
- * Returns a cached Innertube instance configured with an Android mobile client session.
- * Android mobile sessions bypass YouTube's datacenter IP bot-checks, age-gates,
+ * Modern youtubei.js requires a JavaScript evaluator to decipher player stream URLs.
+ * In Node.js / Vercel Serverless, node:vm executes the deciphering function in an isolated context
+ * in ~1-2 milliseconds with zero external binaries or npm evaluator packages.
+ */
+export async function ensurePlatformEvaluator(): Promise<void> {
+  if (isEvaluatorConfigured) return;
+  try {
+    const { Platform } = await import('youtubei.js');
+    const vm = await import('node:vm');
+    Platform.shim.eval = (data: any, env: any) => {
+      const context = vm.createContext({ ...env });
+      // YouTube player scripts use top-level return; wrapping in an IIFE executes without SyntaxError
+      return vm.runInContext(`(function() {\n${data.output}\n})()`, context);
+    };
+    isEvaluatorConfigured = true;
+  } catch (err: any) {
+    console.warn('[YouTube Ingest] Could not configure node:vm evaluator:', err?.message || err);
+  }
+}
+
+// Auto-register evaluator at module load
+ensurePlatformEvaluator().catch(() => {});
+
+const innertubeClients: Record<string, Promise<any>> = {};
+
+/**
+ * Returns a cached Innertube instance configured with the specified client session.
+ * Android and Music sessions bypass YouTube's datacenter IP bot-checks, age-gates,
  * and "Video is login required" restrictions without requiring user login cookies.
  */
-export async function getAndroidInnertube() {
-  if (!androidInnertubePromise) {
-    androidInnertubePromise = (async () => {
+export async function getInnertubeClient(type: 'ANDROID' | 'MUSIC' | 'MWEB'): Promise<any> {
+  if (!innertubeClients[type]) {
+    innertubeClients[type] = (async () => {
+      await ensurePlatformEvaluator();
       const { Session, Innertube, ClientType, UniversalCache } = await import('youtubei.js');
+
+      let clientTypeVal = ClientType.ANDROID;
+      let deviceCategory: 'mobile' | undefined = 'mobile';
+
+      if (type === 'MUSIC') {
+        clientTypeVal = ClientType.MUSIC;
+        deviceCategory = undefined;
+      } else if (type === 'MWEB') {
+        clientTypeVal = ClientType.MWEB;
+        deviceCategory = undefined;
+      }
+
       const session = await Session.create({
-        device_category: 'mobile',
-        client_type: ClientType.ANDROID,
+        device_category: deviceCategory,
+        client_type: clientTypeVal,
         cache: new UniversalCache(false),
       });
       return new Innertube(session);
     })().catch((err) => {
-      androidInnertubePromise = null;
+      delete innertubeClients[type];
       throw err;
     });
   }
-  return androidInnertubePromise;
+  return innertubeClients[type];
+}
+
+/**
+ * Backwards-compatible accessor for Android mobile Innertube session.
+ */
+export async function getAndroidInnertube() {
+  return getInnertubeClient('ANDROID');
 }
 
 /**
@@ -452,15 +498,30 @@ async function extractViaVisionOS(
  */
 async function transcodeToMp3IfPossible(rawBuffer: Buffer, videoId: string): Promise<{ buffer: Buffer; filename: string }> {
   try {
+    const fs = await import('fs');
     const { spawn } = await import('child_process');
     const ffmpegModule: any = await import('@ffmpeg-installer/ffmpeg');
     const ffmpegPath = ffmpegModule.default?.path || ffmpegModule.path;
 
-    if (!ffmpegPath) {
+    if (!ffmpegPath || !fs.existsSync(ffmpegPath)) {
       return { buffer: rawBuffer, filename: `youtube_${videoId}.m4a` };
     }
 
     const mp3Buffer = await new Promise<Buffer>((resolve, reject) => {
+      let isSettled = false;
+      const safeReject = (err: Error) => {
+        if (!isSettled) {
+          isSettled = true;
+          reject(err);
+        }
+      };
+      const safeResolve = (buf: Buffer) => {
+        if (!isSettled) {
+          isSettled = true;
+          resolve(buf);
+        }
+      };
+
       const proc = spawn(ffmpegPath, [
         '-i', 'pipe:0',
         '-vn',
@@ -474,14 +535,20 @@ async function transcodeToMp3IfPossible(rawBuffer: Buffer, videoId: string): Pro
       proc.stderr.on('data', () => {});
       proc.on('close', (code) => {
         if (code === 0 && out.length > 0) {
-          resolve(Buffer.concat(out));
+          safeResolve(Buffer.concat(out));
         } else {
-          reject(new Error(`ffmpeg exited with code ${code}`));
+          safeReject(new Error(`ffmpeg exited with code ${code}`));
         }
       });
-      proc.on('error', (err) => reject(err));
-      proc.stdin.write(rawBuffer);
-      proc.stdin.end();
+      proc.on('error', (err) => safeReject(err));
+      proc.stdin.on('error', () => {});
+
+      try {
+        proc.stdin.write(rawBuffer);
+        proc.stdin.end();
+      } catch (writeErr: any) {
+        safeReject(writeErr);
+      }
     });
 
     if (mp3Buffer && mp3Buffer.length > 1024) {
@@ -527,47 +594,58 @@ export async function extractYouTubeAudioStream(
   let lastErrorMsg = '';
 
   // --------------------------------------------------------------------------
-  // STRATEGY 0: YouTube Android Mobile Client (Innertube Android Session)
+  // STRATEGY 0: Multi-Tier Innertube Client Sessions with node:vm deciphering
+  // Tiers: 1) Android Mobile -> 2) YouTube Music (WEB_REMIX) -> 3) Mobile Web (MWEB)
   // Bypasses YouTube's bot-detection, login requirements, and datacenter IP blocks.
-  // Directly streams un-ciphered audio in-memory, 100% Serverless compatible on Vercel.
+  // Directly streams deciphered audio in-memory, 100% Serverless compatible on Vercel.
   // --------------------------------------------------------------------------
-  try {
-    console.log(`[YouTube Ingest] Attempting Android mobile audio stream for "${metadata.title}" (${metadata.videoId})...`);
-    const yt = await getAndroidInnertube();
-    const stream = await yt.download(metadata.videoId, { type: 'audio' });
+  await ensurePlatformEvaluator();
 
-    if (stream) {
-      const reader = stream.getReader();
-      const chunks: Uint8Array[] = [];
-      let totalBytes = 0;
-      // 10 MB ceiling (~15-20 minutes of audio, comfortably under Groq Whisper 25 MB limit)
-      const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
+  const clientTiers: Array<{ name: string; type: 'ANDROID' | 'MUSIC' | 'MWEB' }> = [
+    { name: 'Android Mobile', type: 'ANDROID' },
+    { name: 'YouTube Music', type: 'MUSIC' },
+    { name: 'Mobile Web', type: 'MWEB' },
+  ];
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        totalBytes += value.length;
-        if (totalBytes >= MAX_AUDIO_BYTES) {
-          try { await reader.cancel(); } catch (_) {}
-          break;
+  for (const tier of clientTiers) {
+    try {
+      console.log(`[YouTube Ingest] Attempting ${tier.name} audio stream for "${metadata.title}" (${metadata.videoId})...`);
+      const yt = await getInnertubeClient(tier.type);
+      const stream = await yt.download(metadata.videoId, { type: 'audio' });
+
+      if (stream) {
+        const reader = stream.getReader();
+        const chunks: Uint8Array[] = [];
+        let totalBytes = 0;
+        // 12 MB ceiling (~18-22 minutes of audio, comfortably under Groq Whisper 25 MB limit)
+        const MAX_AUDIO_BYTES = 12 * 1024 * 1024;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          totalBytes += value.length;
+          if (totalBytes >= MAX_AUDIO_BYTES) {
+            try { await reader.cancel(); } catch (_) {}
+            break;
+          }
+        }
+
+        if (chunks.length > 0 && totalBytes > 1024) {
+          const rawBuffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+          console.log(`[YouTube Ingest] Successfully extracted ${(rawBuffer.length / (1024 * 1024)).toFixed(2)} MB via ${tier.name} session for "${metadata.title}"`);
+          const { buffer: audioBuffer, filename } = await transcodeToMp3IfPossible(rawBuffer, metadata.videoId);
+          return {
+            audioBuffer,
+            filename,
+            metadata,
+          };
         }
       }
-
-      if (chunks.length > 0 && totalBytes > 1024) {
-        const rawBuffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
-        console.log(`[YouTube Ingest] Successfully extracted ${(rawBuffer.length / (1024 * 1024)).toFixed(2)} MB via Android mobile session for "${metadata.title}"`);
-        const { buffer: audioBuffer, filename } = await transcodeToMp3IfPossible(rawBuffer, metadata.videoId);
-        return {
-          audioBuffer,
-          filename,
-          metadata,
-        };
-      }
+    } catch (tierErr: any) {
+      lastErrorMsg = tierErr.message;
+      console.warn(`[YouTube Ingest] ${tier.name} extraction failed: ${tierErr.message}. Trying next strategy...`);
     }
-  } catch (androidErr: any) {
-    lastErrorMsg = androidErr.message;
-    console.warn(`[YouTube Ingest] Android mobile extraction failed: ${androidErr.message}. Attempting VisionOS fallback...`);
   }
 
   // --------------------------------------------------------------------------
