@@ -109,6 +109,34 @@ export async function GET(req: NextRequest) {
       results.clientTests['ANDROID'] = { success: false, error: androidErr.message };
     }
 
+    // Test Client 3: Web Desktop (WEB)
+    try {
+      const t2 = Date.now();
+      const webSession = await Session.create({
+        client_type: ClientType.WEB,
+        cookie: normalizedCookie || undefined,
+        cache: new UniversalCache(false),
+      });
+      const ytWeb = new Innertube(webSession);
+      const streamWeb = await ytWeb.download(videoId, { type: 'audio' });
+
+      if (streamWeb) {
+        const reader = streamWeb.getReader();
+        const { done, value } = await reader.read();
+        try { await reader.cancel(); } catch (_) {}
+
+        results.clientTests['WEB'] = {
+          success: !done && !!value && value.length > 0,
+          chunkBytes: value?.length || 0,
+          elapsedMs: Date.now() - t2,
+        };
+      } else {
+        results.clientTests['WEB'] = { success: false, error: 'Null stream returned' };
+      }
+    } catch (webErr: any) {
+      results.clientTests['WEB'] = { success: false, error: webErr.message };
+    }
+
     // Overall success if any client can download audio chunks
     results.overallSuccess = Object.values(results.clientTests).some((t: any) => t.success);
   } catch (err: any) {

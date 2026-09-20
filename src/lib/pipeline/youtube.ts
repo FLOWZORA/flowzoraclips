@@ -174,20 +174,64 @@ export function normalizeYouTubeCookie(raw?: string): string {
   }
 
   // Case 2: Netscape format (tab-separated lines, comments starting with #)
-  if (str.includes('\t') || str.includes('# Netscape') || str.includes('# HTTP Cookie File')) {
+  if (
+    str.includes('\t') ||
+    str.includes('# Netscape') ||
+    str.includes('# HTTP Cookie File') ||
+    str.includes('#HttpOnly_')
+  ) {
     const lines = str.split(/\r?\n/);
-    const pairs: string[] = [];
+    const cookieMap = new Map<string, string>();
+
     for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const parts = trimmed.split(/\t+/);
+      let trimmed = line.trim();
+      if (!trimmed) continue;
+
+      // CRITICAL: Handle #HttpOnly_ prefix used by all browser cookie export tools.
+      // Google authentication cookies (LOGIN_INFO, __Secure-1PSID, __Secure-3PSID, SID, HSID, SSID)
+      // are all marked HttpOnly! Skipping lines with '#' dropped all auth cookies!
+      if (trimmed.startsWith('#HttpOnly_')) {
+        trimmed = trimmed.replace(/^#HttpOnly_/, '');
+      } else if (trimmed.startsWith('#')) {
+        // True comment header, skip
+        continue;
+      }
+
+      // Check if line is a tab-separated or space-separated Netscape record
+      let parts = trimmed.split('\t');
+      if (parts.length < 7) {
+        parts = trimmed.split(/\s{2,}/);
+      }
+      if (parts.length < 7) {
+        const words = trimmed.split(/\s+/);
+        if (words.length >= 7) {
+          parts = [words[0], words[1], words[2], words[3], words[4], words[5], words.slice(6).join(' ')];
+        }
+      }
+
       if (parts.length >= 7) {
         const name = parts[5].trim();
         const val = parts[6].trim();
-        if (name) pairs.push(`${name}=${val}`);
+        if (name && val && !name.includes(' ')) {
+          cookieMap.set(name, `${name}=${val}`);
+          continue;
+        }
+      }
+
+      // Fallback: check if line is key=value
+      if (trimmed.includes('=')) {
+        const eqIdx = trimmed.indexOf('=');
+        const k = trimmed.slice(0, eqIdx).trim();
+        const v = trimmed.slice(eqIdx + 1).replace(/;$/, '').trim();
+        if (k && !k.includes(' ') && !k.startsWith('#')) {
+          cookieMap.set(k, `${k}=${v}`);
+        }
       }
     }
-    if (pairs.length > 0) return pairs.join('; ');
+
+    if (cookieMap.size > 0) {
+      return Array.from(cookieMap.values()).join('; ');
+    }
   }
 
   // Case 3: Multiline key=value pairs or newline-separated cookies
@@ -772,9 +816,10 @@ async function _extractYouTubeAudioStreamInner(
   // Tested: extracts in < 1 second; fully compatible with Vercel serverless.
   // Automatically passes SAPISID authorization and cookies when provided.
   // --------------------------------------------------------------------------
-  const innertubeTiers: Array<{ name: string; type: 'MWEB' | 'ANDROID' }> = [
+  const innertubeTiers: Array<{ name: string; type: 'MWEB' | 'ANDROID' | 'WEB' }> = [
     { name: 'Mobile Web (MWEB)', type: 'MWEB' },
     { name: 'Android Mobile (ANDROID)', type: 'ANDROID' },
+    { name: 'Web Desktop (WEB)', type: 'WEB' },
   ];
 
   const TIER_TIMEOUT_MS = 8_000;
