@@ -2,11 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Sparkles, User, Zap, LogOut, Menu, X } from 'lucide-react';
-import AuthModal from './AuthModal';
+import { Sparkles, Zap, LogOut, Menu, X } from 'lucide-react';
 
 export default function Navbar() {
-  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [user, setUser] = useState<{
     id: string;
@@ -115,11 +113,11 @@ export default function Navbar() {
             {/* 100% Free Beta Pill - visible on sm+ to prevent header crowding */}
             <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-[#10B981]/30 bg-[#10B981]/10 px-3 py-1 text-xs font-medium text-[#10B981]">
               <Sparkles className="h-3 w-3 text-[#10B981]" />
-              <span>100% Free Beta</span>
+              <span>Free • No Sign-In Required</span>
             </div>
 
-            {/* Auth / Sign In Button */}
-            {user?.email ? (
+            {/* Optional signed-in user email indicator if already authenticated */}
+            {user?.email && (
               <div className="flex items-center gap-1.5 sm:gap-2">
                 <span className="hidden lg:inline-block text-xs font-mono text-[#A1A1A1] max-w-[120px] truncate" title={user.email}>
                   {user.email}
@@ -133,14 +131,6 @@ export default function Navbar() {
                   <LogOut className="h-3.5 w-3.5" />
                 </button>
               </div>
-            ) : (
-              <button
-                onClick={() => setAuthModalOpen(true)}
-                className="flex items-center gap-1.5 rounded-md border border-[#262626] bg-[#0A0A0A] px-2.5 py-1.5 text-xs font-medium text-[#EDEDED] hover:text-white hover:border-[#383838] transition-colors focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:outline-none min-h-[36px]"
-              >
-                <User className="h-3.5 w-3.5 text-[#A1A1A1]" />
-                <span className="hidden xs:inline">Sign In</span>
-              </button>
             )}
 
             {/* Vercel-style Pill CTA */}
@@ -171,7 +161,7 @@ export default function Navbar() {
             <div className="flex sm:hidden items-center justify-between py-2 px-3 rounded-lg bg-[#10B981]/10 border border-[#10B981]/20 text-xs font-medium text-[#10B981] mb-2">
               <span className="flex items-center gap-1.5">
                 <Sparkles className="h-3.5 w-3.5 text-[#10B981]" />
-                100% Free Beta
+                Free • No Sign-In Required
               </span>
               <span className="text-[11px] font-mono text-[#10B981]/80">Unlimited</span>
             </div>
@@ -233,16 +223,6 @@ export default function Navbar() {
           </div>
         )}
       </header>
-
-      {/* Auth Modal */}
-      <AuthModal
-        isOpen={authModalOpen}
-        onClose={() => setAuthModalOpen(false)}
-        onLoginSuccess={(u) => {
-          setUser(u);
-          setAuthModalOpen(false);
-        }}
-      />
     </>
   );
 }

@@ -21,7 +21,6 @@ import {
 import { CandidateClip, AspectRatio, ScriptPreference } from '@/lib/pipeline/types';
 import ClipVideoPreview from '@/components/ClipVideoPreview';
 // import CheckoutButton from '@/components/CheckoutButton';
-import AuthModal from '@/components/AuthModal';
 import SocialCopyModal from '@/components/SocialCopyModal';
 import { exportClipInBrowser } from '@/lib/pipeline/client-video-exporter';
 
@@ -80,8 +79,6 @@ export default function HeroUploader() {
   const [viewMode, setViewMode] = useState<'flowzora' | 'naive'>('flowzora');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [requiresTopup, setRequiresTopup] = useState(false);
-  const [requiresAuth, setRequiresAuth] = useState(false);
-  const [authModalOpen, setAuthModalOpen] = useState(false);
 
   const [rankedClips, setRankedClips] = useState<CandidateClip[]>([]);
   const [naiveClips, setNaiveClips] = useState<NaiveClip[]>([]);
@@ -125,7 +122,6 @@ export default function HeroUploader() {
     setIsProcessing(true);
     setErrorMessage(null);
     setRequiresTopup(false);
-    setRequiresAuth(false);
     setUploadProgress(null);
     setStatusMessage('Preparing processing pipeline...');
 
@@ -180,8 +176,6 @@ export default function HeroUploader() {
           setErrorMessage(msg);
           if (msg.toLowerCase().includes('top-up') || msg.toLowerCase().includes('exceeds') || msg.toLowerCase().includes('credits')) {
             setRequiresTopup(true);
-          } else if (msg.toLowerCase().includes('sign in') || msg.toLowerCase().includes('authentication')) {
-            setRequiresAuth(true);
           }
           return;
         }
@@ -351,8 +345,6 @@ export default function HeroUploader() {
         setErrorMessage(msg);
         if (msg.toLowerCase().includes('top-up') || msg.toLowerCase().includes('exceeds') || msg.toLowerCase().includes('credits')) {
           setRequiresTopup(true);
-        } else if (msg.toLowerCase().includes('sign in') || msg.toLowerCase().includes('authentication')) {
-          setRequiresAuth(true);
         }
         return;
       }
@@ -763,12 +755,12 @@ export default function HeroUploader() {
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-[#9AA2B6] px-1">
           <div className="flex items-center gap-1.5 text-[#10B981]">
             <Sparkles className="h-4 w-4" />
-            <span>100% Free Public Beta • No Credit Card Required</span>
+            <span>100% Free Public Beta • No Sign-In Required • Unlimited Clips</span>
           </div>
           <div>Hindi &amp; Hinglish AI • Scene-Aware 9:16 Reframe</div>
         </div>
 
-        {/* Error / Auth Prompt Banner */}
+        {/* Error Prompt Banner */}
         {errorMessage && (
           <div className="mt-4 rounded-xl border border-[#EF4444]/40 bg-[#EF4444]/10 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-start gap-2.5">
@@ -794,15 +786,6 @@ export default function HeroUploader() {
                   className="rounded-lg bg-white px-3.5 py-1.5 text-xs font-bold text-black hover:bg-[#E5E5E5] transition-colors cursor-pointer shrink-0"
                 >
                   Switch to Upload File Tab →
-                </button>
-              )}
-              {requiresAuth && (
-                <button
-                  type="button"
-                  onClick={() => setAuthModalOpen(true)}
-                  className="rounded-lg bg-[#10B981] px-3.5 py-1.5 text-xs font-bold text-black hover:bg-[#059669]"
-                >
-                  Sign In with Magic Link
                 </button>
               )}
             </div>
@@ -1140,17 +1123,6 @@ export default function HeroUploader() {
           sourceVideoKey={sourceVideoKey}
         />
       )}
-
-      {/* Creator Magic Link Auth Modal */}
-      <AuthModal
-        isOpen={authModalOpen}
-        onClose={() => setAuthModalOpen(false)}
-        onLoginSuccess={() => {
-          setErrorMessage(null);
-          setRequiresAuth(false);
-          handleRunPipeline();
-        }}
-      />
 
       {/* Gemini Social Copy Generator Modal */}
       <SocialCopyModal
