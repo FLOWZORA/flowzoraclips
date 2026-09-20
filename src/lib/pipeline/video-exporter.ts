@@ -43,6 +43,8 @@ export interface ExportRenderResult {
   fileKey: string;
   renderTimeSec: number;
   ffmpegCommand: string;
+  /** Number of subtitle words burned into the clip (observability). */
+  subtitleWordCount?: number;
 }
 
 /**
@@ -92,13 +94,25 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
     ? options.words
     : (cachedClip?.words && cachedClip.words.length > 0 ? cachedClip.words : []);
 
+  // Sanitize: non-finite timestamps poison every comparison (NaN <= x is
+  // false) and can wipe out all words. Repair single-sided gaps, drop the rest.
+  const cleanRawWords = (rawWords || [])
+    .map((w) => {
+      let s = Number(w.start ?? NaN);
+      let e = Number(w.end ?? (Number.isFinite(s) ? s + 0.3 : NaN));
+      if (!Number.isFinite(s) && Number.isFinite(e)) s = Math.max(0, e - 0.3);
+      if (!Number.isFinite(e) && Number.isFinite(s)) e = s + 0.3;
+      return { word: w.word, start: s, end: e, devanagari: w.devanagari };
+    })
+    .filter((w) => (w.word || '').length > 0 && Number.isFinite(w.start) && Number.isFinite(w.end));
+
   let effectiveWords: WordTimestamp[] = [];
-  if (rawWords.length > 0) {
-    const firstStart = Number(rawWords[0]?.start ?? 0);
+  if (cleanRawWords.length > 0) {
+    const firstStart = Number(cleanRawWords[0]?.start ?? 0);
     const isAbsolute = startTime > 0.5 && (firstStart >= startTime - 3.0 || firstStart > durationSec);
     const offset = isAbsolute ? startTime : 0;
     const mapWithOffset = (off: number) =>
-      rawWords
+      cleanRawWords
         .map((w) => ({
           word: w.word,
           start: Math.max(0, Number((Number(w.start ?? 0) - off).toFixed(2))),
@@ -114,11 +128,10 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
       console.warn(
         `[Video Exporter] Word-offset mismatch for clip ${clipId} (startTime=${startTime}, firstWord=${firstStart}); distributing words evenly.`
       );
-      const list = rawWords.filter((w) => (w.word || '').length > 0);
-      effectiveWords = list.map((w, i) => ({
+      effectiveWords = cleanRawWords.map((w, i) => ({
         word: w.word,
-        start: Number((((i / list.length) * durationSec)).toFixed(2)),
-        end: Number((((i + 0.9) / list.length) * durationSec).toFixed(2)),
+        start: Number((((i / cleanRawWords.length) * durationSec)).toFixed(2)),
+        end: Number((((i + 0.9) / cleanRawWords.length) * durationSec).toFixed(2)),
         devanagari: w.devanagari,
       }));
     }
@@ -326,6 +339,7 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
           fileKey,
           renderTimeSec: data.renderTimeSec || 12,
           ffmpegCommand: jobSpec.command,
+          subtitleWordCount: effectiveWords.length,
         };
       }
     } catch (err) {
@@ -421,6 +435,7 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
         fileKey,
         renderTimeSec: Math.max(1, Math.round(durationSec * 0.2)),
         ffmpegCommand: `ffmpeg ${args.join(' ')}`,
+        subtitleWordCount: effectiveWords.length,
       };
     } catch (localErr) {
       console.warn('[Video Exporter] Local FFmpeg render failed, using reliable genuine MP4 fallback:', localErr);
@@ -455,6 +470,7 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
     fileKey,
     renderTimeSec: Math.max(2, Math.round(durationSec * 0.25)),
     ffmpegCommand: jobSpec.command,
+    subtitleWordCount: effectiveWords.length,
   };
 }
 

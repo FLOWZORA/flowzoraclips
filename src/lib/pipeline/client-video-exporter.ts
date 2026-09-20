@@ -123,14 +123,31 @@ export async function exportClipInBrowser(
   const bgCtx = bgCanvas.getContext('2d', { alpha: false });
 
   // 3. Prepare Subtitle Timestamps (relative to clip 0s)
-  const firstStart = Number(words[0]?.start ?? (words[0] as any)?.relStart ?? 0);
+  // Sanitize first: a single NaN timestamp poisons comparisons (NaN <= x is
+  // false) and can wipe out every word below. Repair or drop bad entries.
+  const cleanWords = (words || [])
+    .map((w: any) => {
+      let s = Number(w.start ?? w.relStart ?? NaN);
+      let e = Number(w.end ?? w.relEnd ?? NaN);
+      if (!Number.isFinite(s) && Number.isFinite(e)) s = Math.max(0, e - 0.3);
+      if (!Number.isFinite(e) && Number.isFinite(s)) e = s + 0.3;
+      return {
+        word: String(w.word || ''),
+        devanagari: String(w.devanagari || w.word || ''),
+        start: s,
+        end: e,
+      };
+    })
+    .filter((w) => w.word.length > 0 && Number.isFinite(w.start) && Number.isFinite(w.end));
+
+  const firstStart = Number(cleanWords[0]?.start ?? 0);
   const isAbsolute = startTime > 0.5 && (firstStart >= startTime - 3.0 || firstStart > duration);
   const offset = isAbsolute ? startTime : 0;
 
   const mapWithOffset = (off: number) =>
-    (words || []).map((w: any) => {
-      const rawS = Number(w.start ?? w.relStart ?? 0);
-      const rawE = Number(w.end ?? w.relEnd ?? rawS + 0.35);
+    cleanWords.map((w: any) => {
+      const rawS = Number(w.start);
+      const rawE = Number(w.end);
       return {
         word: String(w.word || ''),
         devanagari: String(w.devanagari || w.word || ''),
@@ -145,16 +162,15 @@ export async function exportClipInBrowser(
   // relative to a trimmed/nudged start instead of the clip start), the raw
   // times are untrustworthy — distribute the words evenly across the clip so
   // captions stay visible instead of vanishing entirely.
-  if (mappedWords.length === 0 && (words || []).length > 0) {
+  if (mappedWords.length === 0 && cleanWords.length > 0) {
     console.warn(
       `[Export] Word-offset mismatch (startTime=${startTime}, firstWord=${firstStart}); distributing words evenly.`
     );
-    const list = (words || []).filter((w: any) => String(w.word || '').length > 0);
-    mappedWords = list.map((w: any, i: number) => ({
+    mappedWords = cleanWords.map((w: any, i: number) => ({
       word: String(w.word || ''),
       devanagari: String(w.devanagari || w.word || ''),
-      relStart: Number((((i / list.length) * duration)).toFixed(2)),
-      relEnd: Number((((i + 0.9) / list.length) * duration).toFixed(2)),
+      relStart: Number((((i / cleanWords.length) * duration)).toFixed(2)),
+      relEnd: Number((((i + 0.9) / cleanWords.length) * duration).toFixed(2)),
     }));
   }
 

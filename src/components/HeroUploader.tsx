@@ -347,6 +347,17 @@ export default function HeroUploader() {
     setExportingClipId(clip.id);
     setExportProgress(0);
 
+    // Guard: a clip with no caption data would download with zero subtitles.
+    // Surface it instead of producing a silent-looking file.
+    if ((clip.words?.length || 0) === 0 && !(clip.transcriptSnippet || '').trim()) {
+      setErrorMessage(
+        'No captions were generated for this clip, so there is nothing to burn into the download. Please re-run "Generate Ranked Highlights" and try again.'
+      );
+      setExportingClipId(null);
+      setExportProgress(null);
+      return;
+    }
+
     // 1. High-speed client-side rendering with burned-in animated subtitles for uploaded files
     // (only where the browser records real MP4 — otherwise fall through to the
     // server ffmpeg render so the download plays everywhere, not just browsers)

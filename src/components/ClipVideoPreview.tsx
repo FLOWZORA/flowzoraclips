@@ -860,7 +860,7 @@ export default function ClipVideoPreview({
 
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<number | null>(null);
-  const [socialCopyOpen, setSocialCopyOpen] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);  const [socialCopyOpen, setSocialCopyOpen] = useState(false);
 
   // Aspect Ratio & Platform mapping with verified canonical dimensions
   type PlatformId = 'instagram_reel' | 'tiktok' | 'yt_shorts' | 'instagram_feed' | 'youtube';
@@ -961,8 +961,16 @@ export default function ClipVideoPreview({
   const activePlatform = PLATFORMS.find((p) => p.id === platform) || PLATFORMS[0];
 
   const handleExportDownload = async () => {
+    setExportError(null);
     setIsExporting(true);
     setExportProgress(0);
+    // Guard: a clip with no caption data would download with zero subtitles.
+    if (((clip as any).words?.length || 0) === 0 && !(clip.transcriptSnippet || '').trim()) {
+      setExportError('No captions were generated for this clip — close the studio and re-run "Generate Ranked Highlights", then try again.');
+      setIsExporting(false);
+      setExportProgress(null);
+      return;
+    }
     try {
       const exportFormat = aspectRatio || activePlatform.ratio || '9:16';
       const isYouTube = Boolean(
@@ -1564,7 +1572,11 @@ export default function ClipVideoPreview({
 
             {/* Bottom Actions: Export */}
             <div className="mt-2 pt-2 border-t border-[#242938]">
-
+              {exportError && (
+                <p className="mb-1.5 rounded-lg border border-[#EF4444]/40 bg-[#EF4444]/10 px-2 py-1.5 text-[11px] font-semibold text-white">
+                  {exportError}
+                </p>
+              )}
               <div className="space-y-1.5">
                 <button
                   onClick={handleExportDownload}
