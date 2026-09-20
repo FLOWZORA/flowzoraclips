@@ -1,0 +1,48 @@
+# Keeps the YouTube audio worker from spinning down.
+#
+# Why this exists: the Render free instance sleeps after ~15 minutes idle and
+# its cold start (~50s) exceeds the 45s AbortSignal in src/lib/pipeline/youtube.ts.
+# Without a ping, the first user after any quiet spell gets the upload-fallback
+# banner even though everything is configured correctly.
+#
+# Why NOT 24/7: the workspace gets 750 free instance-hours a month and there is
+# no card on file, so going over SUSPENDS the service rather than billing it.
+# Warming round the clock costs ~720h and leaves nothing for the ffmpeg worker.
+# This window is 18h/day (~540h/month), leaving real headroom.
+#
+# Window is 02:00-19:59 UTC = 07:30-01:29 IST, i.e. awake for Indian daytime
+# and evening, asleep overnight. Adjust the hour range if traffic shifts.
+#
+# Every 5 minutes rather than 10: GitHub's scheduled runs are best-effort and
+# can be delayed by 10-30 minutes under load, so the tighter interval buys
+# margin against Render's 15-minute idle timeout.
+name: Keep worker warm
+
+on:
+  schedule:
+    - cron: '*/5 2-19 * * *'
+  workflow_dispatch: # lets you trigger a wake-up by hand
+
+# Never let a slow cold start stack up overlapping runs.
+concurrency:
+  group: keep-worker-warm
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping worker /health
+        run: |
+          # -m 90 tolerates a full cold start; this run is what pays that cost
+          # so a real user does not have to.
+          code=$(curl -sS -m 90 -o /dev/null -w '%{http_code}' \
+            https://flowzora-yt-worker.onrender.com/health || echo 000)
+          echo "worker /health -> HTTP $code"
+          # A warning, not a failure: a red X on a cron job every time Render
+          # blips trains you to ignore the notification. Suspended services
+          # return 503, which is expected if the service is intentionally off.
+          if [ "$code" != "200" ]; then
+            echo "::warning::worker /health returned $code (suspended, cold, or down)"
+          fi
