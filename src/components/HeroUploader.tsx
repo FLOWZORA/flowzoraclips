@@ -21,7 +21,7 @@ import { CandidateClip, AspectRatio } from '@/lib/pipeline/types';
 import ClipVideoPreview from '@/components/ClipVideoPreview';
 // import CheckoutButton from '@/components/CheckoutButton';
 import SocialCopyModal from '@/components/SocialCopyModal';
-import { exportClipInBrowser } from '@/lib/pipeline/client-video-exporter';
+import { exportClipInBrowser, isBrowserMp4RecordingSupported } from '@/lib/pipeline/client-video-exporter';
 
 interface NaiveClip {
   id: string;
@@ -348,7 +348,9 @@ export default function HeroUploader() {
     setExportProgress(0);
 
     // 1. High-speed client-side rendering with burned-in animated subtitles for uploaded files
-    if (selectedFile || sourceMediaUrl) {
+    // (only where the browser records real MP4 — otherwise fall through to the
+    // server ffmpeg render so the download plays everywhere, not just browsers)
+    if ((selectedFile || sourceMediaUrl) && isBrowserMp4RecordingSupported()) {
       try {
         const mediaSource = selectedFile || sourceMediaUrl;
         const result = await exportClipInBrowser({

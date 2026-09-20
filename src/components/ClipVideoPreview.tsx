@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { AspectRatio, ScriptPreference, CandidateClip } from '@/lib/pipeline/types';
 import SocialCopyModal from '@/components/SocialCopyModal';
-import { exportClipInBrowser } from '@/lib/pipeline/client-video-exporter';
+import { exportClipInBrowser, isBrowserMp4RecordingSupported } from '@/lib/pipeline/client-video-exporter';
 
 declare global {
   interface Window {
@@ -971,7 +971,9 @@ export default function ClipVideoPreview({
       );
 
       // 1. High-speed client-side rendering with burned-in animated subtitles for local/uploaded files
-      if (sourceMediaUrl && !isYouTube) {
+      // (only where the browser records real MP4 — otherwise use the server
+      // ffmpeg render so the download plays everywhere, not just browsers)
+      if (sourceMediaUrl && !isYouTube && isBrowserMp4RecordingSupported()) {
         try {
           const result = await exportClipInBrowser({
             sourceMedia: sourceMediaUrl,

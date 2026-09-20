@@ -81,7 +81,6 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
   } = options;
 
   const durationSec = Number(Math.min(35, endTime - startTime).toFixed(1));
-  const safeEndTime = Number((startTime + durationSec).toFixed(1));
   const jobId = `render-${clipId}-${Date.now()}`;
   const fileKey = `exports/${userId}/${jobId}_${format.replace(':', 'x')}.mp4`;
   const outputFilename = `flowzora_${clipId}_${Math.round(startTime)}s-${Math.round(endTime)}s_${format.replace(':', 'x')}.mp4`;
@@ -364,11 +363,15 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
         isComplexFilter = false;
       }
 
+      // Input seeking (-ss before -i) is fast; duration (-t as OUTPUT option)
+      // is immune to timestamp-base drift that -to suffers with input seeks
+      // (wrong clip length / unseekable files on some players). Timestamps
+      // are normalized to start at zero for maximum player compatibility.
       const args = [
         '-y',
         '-ss', String(startTime),
-        '-to', String(safeEndTime),
         '-i', resolvedInputPath,
+        '-t', String(durationSec),
         isComplexFilter ? '-filter_complex' : '-vf', filter,
         '-pix_fmt', 'yuv420p',
         '-c:v', 'libx264',
@@ -376,6 +379,7 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
         '-crf', '22',
         '-c:a', 'aac',
         '-b:a', '192k',
+        '-avoid_negative_ts', 'make_zero',
         '-movflags', '+faststart',
         outputPath,
       ];

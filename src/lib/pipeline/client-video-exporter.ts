@@ -21,11 +21,29 @@ export interface ClientExportResult {
 }
 
 /**
+ * True when this browser can record MP4 directly (Chrome / Edge / Safari).
+ * Firefox cannot record MP4 — it would produce WebM, which many phones,
+ * native players and social uploaders reject. Callers should send those
+ * browsers to the server-side ffmpeg MP4 render instead.
+ */
+export function isBrowserMp4RecordingSupported(): boolean {
+  if (typeof MediaRecorder === 'undefined') return false;
+  return (
+    MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E,mp4a.40.2') ||
+    MediaRecorder.isTypeSupported('video/mp4;codecs=avc1') ||
+    MediaRecorder.isTypeSupported('video/mp4')
+  );
+}
+
+/**
  * High-performance, in-browser video renderer that burns animated karaoke subtitles
  * directly into 9:16 vertical (Instagram Reels / YouTube Shorts) video frames.
  *
  * Runs 100% client-side using HTML5 Canvas, Web Audio API, and MediaRecorder.
  * Completely immune to Vercel serverless timeouts and 4.5MB payload limits.
+ *
+ * NOTE: Only call this when isBrowserMp4RecordingSupported() is true — other
+ * browsers would produce WebM, which plays poorly outside browsers.
  */
 export async function exportClipInBrowser(
   options: ClientExportOptions
@@ -95,6 +113,14 @@ export async function exportClipInBrowser(
     throw new Error('Could not initialize canvas 2D rendering context');
   }
   const renderCtx: CanvasRenderingContext2D = ctx;
+
+  // Quarter-resolution scratch canvas for the ambient blurred background.
+  // A fullscreen CSS blur at 1080x1920 every frame drops frames on weaker
+  // machines (choppy output); blurring small then upscaling looks identical.
+  const bgCanvas = document.createElement('canvas');
+  bgCanvas.width = Math.max(160, Math.round(targetW / 4));
+  bgCanvas.height = Math.max(160, Math.round(targetH / 4));
+  const bgCtx = bgCanvas.getContext('2d', { alpha: false });
 
   // 3. Prepare Subtitle Timestamps (relative to clip 0s)
   const firstStart = Number(words[0]?.start ?? (words[0] as any)?.relStart ?? 0);
@@ -191,6 +217,10 @@ export async function exportClipInBrowser(
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
     if (AudioCtx) {
       audioCtx = new AudioCtx();
+      // A suspended context captures silence — resume it or the clip has no audio.
+      try {
+        if (audioCtx.state === 'suspended') await audioCtx.resume();
+      } catch (_) {}
       const sourceNode = audioCtx.createMediaElementSource(video);
       const destNode = audioCtx.createMediaStreamDestination();
       // Connect ONLY to destNode so the user does NOT hear audio blasting through speakers during export
@@ -254,9 +284,24 @@ export async function exportClipInBrowser(
   const fontSize = isVertical ? 54 : 44;
   const subtitleY = isVertical ? targetH - 360 : targetH - 160;
 
-  return new Promise<ClientExportResult>((resolve, reject) => {
+  return new Promise<ClientExportResult>(async (resolve, reject) => {
     let animId: number;
     let isFinished = false;
+
+    const fail = (err: unknown) => {
+      if (isFinished) return;
+      isFinished = true;
+      cancelAnimationFrame(animId);
+      try { video.pause(); } catch (_) {}
+      video.remove();
+      if (audioCtx && audioCtx.state !== 'closed') {
+        try { audioCtx.close(); } catch (_) {}
+      }
+      if (objectUrlToRevoke) {
+        URL.revokeObjectURL(objectUrlToRevoke);
+      }
+      reject(err instanceof Error ? err : new Error('Browser export failed'));
+    };
 
     const cleanup = () => {
       isFinished = true;
@@ -291,21 +336,47 @@ export async function exportClipInBrowser(
       reject(err);
     };
 
-    // Hard ceiling safety timeout: (duration + 5s)
+    // Hard ceiling safety timeout: (duration + 8s, room for playback spin-up)
     const safetyTimeout = setTimeout(() => {
       if (!isFinished) {
         try { recorder.stop(); } catch (_) {}
       }
-    }, (duration + 5) * 1000);
+    }, (duration + 8) * 1000);
 
-    recorder.start(100);
+    // Start playback FIRST and wait until frames are actually advancing past
+    // the seek point before recording. Starting the recorder while the video
+    // is still seeking/buffering bakes frozen or black frames into the clip.
+    try {
+      await video.play();
+    } catch (_) {
+      // Unmuted playback blocked by browser policy — retry muted so the
+      // video track still renders (audio may be silent in this rare case).
+      try {
+        video.muted = true;
+        await video.play();
+      } catch (_) {}
+    }
 
-    // Start video playback
-    video.play().catch(() => {
-      // In case unmuted was blocked by browser policy
-      video.muted = true;
-      video.play().catch(() => {});
+    await new Promise<void>((resolve) => {
+      const deadline = Date.now() + 4000;
+      const check = () => {
+        if (isFinished) return resolve();
+        if ((!video.paused && video.currentTime >= startTime + 0.04) || Date.now() > deadline) {
+          return resolve();
+        }
+        setTimeout(check, 60);
+      };
+      check();
     });
+
+    if (isFinished) return;
+    try {
+      recorder.start(100);
+    } catch (err) {
+      clearTimeout(safetyTimeout);
+      fail(err);
+      return;
+    }
 
     function renderFrame() {
       if (isFinished) return;
@@ -333,14 +404,27 @@ export async function exportClipInBrowser(
       const vh = video.videoHeight || 1080;
 
       if (isVertical && fitMode === 'fit') {
-        // 1. Ambient blurred background
-        renderCtx.save();
-        renderCtx.filter = 'blur(28px) brightness(0.65)';
-        const scaleCover = Math.max(targetW / vw, targetH / vh);
-        const bgW = vw * scaleCover;
-        const bgH = vh * scaleCover;
-        renderCtx.drawImage(video, (targetW - bgW) / 2, (targetH - bgH) / 2, bgW, bgH);
-        renderCtx.restore();
+        // 1. Ambient blurred background (rendered small, then upscaled — cheap)
+        if (bgCtx) {
+          bgCtx.save();
+          bgCtx.filter = 'blur(6px) brightness(0.65)';
+          const bw = bgCanvas.width;
+          const bh = bgCanvas.height;
+          const scaleCover = Math.max(bw / vw, bh / vh);
+          const bgW = vw * scaleCover;
+          const bgH = vh * scaleCover;
+          bgCtx.drawImage(video, (bw - bgW) / 2, (bh - bgH) / 2, bgW, bgH);
+          bgCtx.restore();
+          renderCtx.drawImage(bgCanvas, 0, 0, targetW, targetH);
+        } else {
+          renderCtx.save();
+          renderCtx.filter = 'blur(28px) brightness(0.65)';
+          const scaleCover = Math.max(targetW / vw, targetH / vh);
+          const bgW = vw * scaleCover;
+          const bgH = vh * scaleCover;
+          renderCtx.drawImage(video, (targetW - bgW) / 2, (targetH - bgH) / 2, bgW, bgH);
+          renderCtx.restore();
+        }
 
         // 2. Sharp centered foreground
         const scaleFit = Math.min(targetW / vw, targetH / vh);
