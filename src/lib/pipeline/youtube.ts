@@ -754,12 +754,10 @@ export async function extractYouTubeAudioStream(
   }
 
   // --------------------------------------------------------------------------
-  // STRATEGY 4: Friendly, actionable error message if all strategies are exhausted
+  // STRATEGY 4: Friendly, actionable guidance when YouTube server playback is restricted
   // --------------------------------------------------------------------------
-  const reasonSuffix = lastErrorMsg ? ` (${lastErrorMsg})` : '';
   throw new Error(
-    `Unable to stream audio for YouTube video "${metadata.title}"${reasonSuffix}. ` +
-    `YouTube's servers may be temporarily restricting automated playback for this video. ` +
-    `Please download the audio or video file and upload it directly in the "Upload File" tab for instant clip generation.`
+    `YouTube's bot-detection policies are restricting direct cloud server playback for "${metadata.title}". ` +
+    `Please download the audio or video file and upload it directly in the "Upload File" tab for instant, unrestricted clip generation.`
   );
 }
