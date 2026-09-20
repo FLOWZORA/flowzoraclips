@@ -105,9 +105,33 @@ export async function getInnertubeClient(type: 'ANDROID' | 'MUSIC' | 'MWEB'): Pr
         deviceCategory = undefined;
       }
 
+      const proxyUrl = process.env.YOUTUBE_PROXY_URL || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+      let customFetch: any = undefined;
+
+      if (proxyUrl) {
+        try {
+          const { ProxyAgent } = await import('undici');
+          const dispatcher = new ProxyAgent(proxyUrl);
+          customFetch = (input: any, init?: any) => {
+            return fetch(input, {
+              ...init,
+              // @ts-ignore
+              dispatcher,
+            });
+          };
+          console.log(`[YouTube Ingest] Configured proxy dispatcher for Innertube: ${proxyUrl.split('@').pop()}`);
+        } catch (proxyErr: any) {
+          console.warn(`[YouTube Ingest] Could not initialize proxy agent: ${proxyErr.message}`);
+        }
+      }
+
+      const cookie = process.env.YOUTUBE_COOKIE || undefined;
+
       const session = await Session.create({
         device_category: deviceCategory,
         client_type: clientTypeVal,
+        cookie,
+        fetch: customFetch,
         cache: new UniversalCache(false),
       });
       return new Innertube(session);

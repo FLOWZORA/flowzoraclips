@@ -3,9 +3,11 @@
 # ==============================================================================
 FROM node:22-alpine
 
-# Install FFmpeg, Fontconfig, and Noto fonts (including full Devanagari ligatures)
+# Install FFmpeg, Python3, yt-dlp, Fontconfig, and Noto fonts (including full Devanagari ligatures)
 RUN apk add --no-cache \
     ffmpeg \
+    python3 \
+    yt-dlp \
     fontconfig \
     freetype \
     ttf-dejavu \

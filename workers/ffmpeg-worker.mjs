@@ -143,6 +143,56 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Extract YouTube Audio Endpoint
+  if (req.method === 'POST' && url.pathname === '/extract-audio') {
+    const authHeader = req.headers.authorization || '';
+    if (WORKER_SECRET_TOKEN && authHeader !== `Bearer ${WORKER_SECRET_TOKEN}`) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Unauthorized: invalid worker token' }));
+    }
+
+    let rawBody = '';
+    req.on('data', (chunk) => {
+      rawBody += chunk;
+    });
+
+    req.on('end', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'flowzora-yt-'));
+      try {
+        const payload = JSON.parse(rawBody);
+        const { url: ytUrl, videoId = `yt_${Date.now()}` } = payload;
+
+        if (!ytUrl) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'URL is required' }));
+        }
+
+        console.log(`[Worker] Extracting audio for YouTube video: ${videoId}`);
+        const outputPath = path.join(tempDir, `audio_${videoId}.m4a`);
+
+        // Use yt-dlp to download lightweight audio
+        const ytdlpCmd = `yt-dlp -f "ba[ext=m4a]/ba/b" --max-filesize 20M -o "${outputPath}" "${ytUrl}"`;
+        await execAsync(ytdlpCmd);
+
+        const audioBuf = await fs.readFile(outputPath);
+        res.writeHead(200, {
+          'Content-Type': 'audio/mp4',
+          'Content-Length': audioBuf.length,
+        });
+        return res.end(audioBuf);
+      } catch (err) {
+        console.error('[Worker] Audio extraction failed:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: `Worker extraction failed: ${err.message}` }));
+      } finally {
+        try {
+          await fs.rm(tempDir, { recursive: true, force: true });
+        } catch (_) {}
+      }
+    });
+    return;
+  }
+
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Endpoint not found' }));
 });
