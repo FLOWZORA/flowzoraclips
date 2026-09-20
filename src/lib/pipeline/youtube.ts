@@ -397,15 +397,18 @@ export async function getInnertubeClient(type: 'MWEB' | 'ANDROID' | 'IOS' | 'WEB
       const cookie = normalizeYouTubeCookie(rawCookie) || undefined;
       const poToken = process.env.YOUTUBE_PO_TOKEN || process.env.YT_PO_TOKEN || undefined;
 
-      // Automatically obtain guest visitorData token to bypass cloud IP bot checks
+      // When authenticated cookies are provided, preserve the user session.
+      // When cookies are absent, inject guest visitor_data token so datacenter requests don't look like anonymous bots.
       let visitorData: string | undefined = undefined;
-      try {
-        const guest = await fetchYouTubeGuestSession();
-        if (guest.visitorData) {
-          visitorData = guest.visitorData;
+      if (!cookie) {
+        try {
+          const guest = await fetchYouTubeGuestSession();
+          if (guest.visitorData) {
+            visitorData = guest.visitorData;
+          }
+        } catch (guestErr: any) {
+          console.warn('[YouTube Ingest] Could not obtain visitorData token:', guestErr?.message || guestErr);
         }
-      } catch (guestErr: any) {
-        console.warn('[YouTube Ingest] Could not obtain visitorData token:', guestErr?.message || guestErr);
       }
 
       const session = await Session.create({

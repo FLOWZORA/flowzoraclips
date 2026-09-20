@@ -71,13 +71,15 @@ export async function GET(req: NextRequest) {
       return vm.runInContext(`(function(){\n${data.output}\n})()`, context);
     };
 
+    const effectiveVisitorData = !normalizedCookie ? guestVisitorData : undefined;
+
     // Test Client 1: Mobile Web (MWEB)
     try {
       const t0 = Date.now();
       const mwebSession = await Session.create({
         client_type: ClientType.MWEB,
         cookie: normalizedCookie || undefined,
-        visitor_data: guestVisitorData,
+        visitor_data: effectiveVisitorData,
         po_token: poToken,
         cache: new UniversalCache(false),
       });
@@ -108,7 +110,7 @@ export async function GET(req: NextRequest) {
         client_type: ClientType.ANDROID,
         device_category: 'mobile',
         cookie: normalizedCookie || undefined,
-        visitor_data: guestVisitorData,
+        visitor_data: effectiveVisitorData,
         po_token: poToken,
         cache: new UniversalCache(false),
       });
@@ -138,7 +140,7 @@ export async function GET(req: NextRequest) {
       const webSession = await Session.create({
         client_type: ClientType.WEB,
         cookie: normalizedCookie || undefined,
-        visitor_data: guestVisitorData,
+        visitor_data: effectiveVisitorData,
         po_token: poToken,
         cache: new UniversalCache(false),
       });
