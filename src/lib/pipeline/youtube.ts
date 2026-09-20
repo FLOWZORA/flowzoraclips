@@ -933,13 +933,19 @@ async function _extractYouTubeAudioStreamInner(
   if (workerUrl) {
     try {
       console.log(`[YouTube Ingest] Attempting audio extraction via Railway worker: ${workerUrl}...`);
-      const rawCookie =
-        process.env.YOUTUBE_COOKIE ||
-        process.env.YOUTUBE_COOKIES ||
-        process.env.YT_COOKIE ||
-        process.env.YT_COOKIES;
-      const cookie = normalizeYouTubeCookie(rawCookie);
-
+      // Deliberately do NOT forward a cookie. The worker owns its own
+      // YOUTUBE_COOKIE and its request body takes precedence over that env var
+      // (see writeCookieFile in railway-worker/server.js), so sending one here
+      // OVERRIDES the worker's cookies with whatever this host happens to hold.
+      //
+      // That is a live failure, not a hypothetical: Vercel's YOUTUBE_COOKIE was
+      // a stale export, and forwarding it made every production extraction fail
+      // with "Sign in to confirm you're not a bot" while the very same request
+      // succeeded when sent without a cookie. Verified by A/B against the
+      // deployed worker.
+      //
+      // Keeping cookies solely on the worker also means the session never
+      // crosses the network on each request, and there is one place to rotate.
       const workerRes = await fetch(`${workerUrl.replace(/\/$/, '')}/extract-audio`, {
         method: 'POST',
         headers: {
@@ -949,9 +955,8 @@ async function _extractYouTubeAudioStreamInner(
         body: JSON.stringify({
           url: `https://www.youtube.com/watch?v=${metadata.videoId}`,
           videoId: metadata.videoId,
-          cookie: cookie || undefined,
         }),
-        signal: AbortSignal.timeout(45_000), // 45s — Railway worker has 90s internally
+        signal: AbortSignal.timeout(45_000), // worker's own cap is EXTRACT_TIMEOUT_MS (40s)
       });
 
       if (workerRes.ok) {
