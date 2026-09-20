@@ -816,10 +816,10 @@ async function _extractYouTubeAudioStreamInner(
   // Tested: extracts in < 1 second; fully compatible with Vercel serverless.
   // Automatically passes SAPISID authorization and cookies when provided.
   // --------------------------------------------------------------------------
-  const innertubeTiers: Array<{ name: string; type: 'MWEB' | 'ANDROID' | 'WEB' }> = [
+  const innertubeTiers: Array<{ name: string; type: 'WEB' | 'MWEB' | 'ANDROID' }> = [
+    { name: 'Web Desktop (WEB)', type: 'WEB' },
     { name: 'Mobile Web (MWEB)', type: 'MWEB' },
     { name: 'Android Mobile (ANDROID)', type: 'ANDROID' },
-    { name: 'Web Desktop (WEB)', type: 'WEB' },
   ];
 
   const TIER_TIMEOUT_MS = 8_000;
