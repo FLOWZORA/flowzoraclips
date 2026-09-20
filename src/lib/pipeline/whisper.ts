@@ -37,7 +37,7 @@ export async function transcribeAudio(
 
   if (!audioBuffer || audioBuffer.length === 0) {
     throw new Error(
-      'No audio data provided for transcription. Please upload a valid media file or enter a YouTube URL.'
+      'No audio data provided for transcription. Please upload a valid media file.'
     );
   }
 

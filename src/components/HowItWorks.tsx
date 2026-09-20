@@ -30,7 +30,7 @@ const steps: Step[] = [
       'English audio language with word-level timestamp precision',
       'English animated captions burned directly into the exported clip',
     ],
-    techPill: 'Cloudflare R2 • Presigned S3 API • yt-dlp Worker',
+    techPill: 'Cloudflare R2 • Presigned S3 API • FFmpeg Audio Extract',
   },
   {
     id: 'transcribe',

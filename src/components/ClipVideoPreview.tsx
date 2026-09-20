@@ -1167,7 +1167,7 @@ export default function ClipVideoPreview({
                   <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 text-center bg-[#0F111A]">
                     <ScanFace className="h-10 w-10 text-[#9AA2B6] mb-2 opacity-50" />
                     <p className="text-sm font-semibold text-white">No source video loaded</p>
-                    <p className="text-xs text-[#9AA2B6] mt-1">Please upload a media file or enter a YouTube URL to preview clips.</p>
+                    <p className="text-xs text-[#9AA2B6] mt-1">Please upload a media file to preview clips.</p>
                   </div>
                 )}
 

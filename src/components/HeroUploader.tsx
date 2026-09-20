@@ -157,7 +157,7 @@ export default function HeroUploader() {
         } else if (fileSizeMB > 4.5) {
           // File exceeds Vercel 4.5MB limit and R2 is not configured
           setErrorMessage(
-            `File size (${fileSizeMB.toFixed(1)} MB) exceeds Vercel's 4.5 MB serverless limit. To process files over 4.5 MB, please configure Cloudflare R2 environment variables (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY) in your Vercel project dashboard, or paste the YouTube link in the YouTube URL tab directly!`
+            `File size (${fileSizeMB.toFixed(1)} MB) exceeds Vercel's 4.5 MB serverless limit. To process files over 4.5 MB, please configure Cloudflare R2 environment variables (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY) in your Vercel project dashboard.`
           );
           setIsProcessing(false);
           return;
@@ -166,7 +166,7 @@ export default function HeroUploader() {
         console.warn('[Upload] Direct R2 upload error:', uploadErr.message);
         if (fileSizeMB > 4.5) {
           setErrorMessage(
-            `Direct upload error: ${uploadErr.message}. For files larger than 4.5 MB, please ensure Cloudflare R2 is configured in Vercel or use the YouTube URL tab.`
+            `Direct upload error: ${uploadErr.message}. For files larger than 4.5 MB, please ensure Cloudflare R2 is configured in Vercel.`
           );
           setIsProcessing(false);
           return;
@@ -212,7 +212,7 @@ export default function HeroUploader() {
         json = JSON.parse(resText);
       } catch {
         if (res.status === 413) {
-          setErrorMessage('File size exceeds serverless upload limit (4.5 MB). Please configure Cloudflare R2 or use the YouTube URL tab.');
+          setErrorMessage('File size exceeds serverless upload limit (4.5 MB). Please configure Cloudflare R2.');
         } else {
           setErrorMessage(resText.slice(0, 160) || `Server error (${res.status})`);
         }
@@ -307,13 +307,8 @@ export default function HeroUploader() {
     setExportingClipId(clip.id);
     setExportProgress(0);
 
-    const isYouTube = Boolean(
-      sourceMediaUrl &&
-      (sourceMediaUrl.includes('youtube.com') || sourceMediaUrl.includes('youtu.be'))
-    );
-
-    // 1. High-speed client-side rendering with burned-in animated subtitles for local/uploaded files
-    if ((selectedFile || sourceMediaUrl) && !isYouTube) {
+    // 1. High-speed client-side rendering with burned-in animated subtitles for uploaded files
+    if (selectedFile || sourceMediaUrl) {
       try {
         const mediaSource = selectedFile || sourceMediaUrl;
         const result = await exportClipInBrowser({
@@ -343,7 +338,7 @@ export default function HeroUploader() {
       }
     }
 
-    // 2. Server-side export fallback (for YouTube URLs or fallback)
+    // 2. Server-side export fallback
     try {
       const exportFormat = '9:16';
       const res = await fetch('/api/export/render', {
