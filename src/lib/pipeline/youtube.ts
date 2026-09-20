@@ -855,6 +855,33 @@ async function _extractYouTubeAudioStreamInner(
   console.log(`[YouTube Ingest] Extracting audio for "${metadata.title}" (${metadata.videoId})...`);
 
   let lastErrorMsg = '';
+
+  // --------------------------------------------------------------------------
+  // FAST FAIL: serverless host with no extraction worker configured.
+  //
+  // Verified empirically against a deployed worker: YouTube answers requests
+  // from cloud datacenter IPs with "Sign in to confirm you're not a bot", and
+  // that demand is for AUTHENTICATION -- PO Tokens explicitly do not satisfy
+  // it. Without account cookies, every server-side strategy below is going to
+  // lose from Vercel, and grinding through all of them costs the user ~50s
+  // before showing the same message they could have had instantly.
+  //
+  // Worse, when a tier does squeak through it hits the MAX_AUDIO_BYTES cap and
+  // returns a truncated stream: a 23-minute video came back as 84 seconds of
+  // audio and was reported as success. Failing cleanly beats that.
+  //
+  // Local dev has no VERCEL env var, so it still runs every strategy below --
+  // including the local yt-dlp path, which works fine from a residential IP.
+  // Setting YOUTUBE_WORKER_URL also re-enables the full chain.
+  const workerConfigured = !!(process.env.YOUTUBE_WORKER_URL || process.env.YT_WORKER_URL);
+  if (process.env.VERCEL && !workerConfigured) {
+    console.log('[YouTube Ingest] No worker configured on serverless host — failing fast to the upload path.');
+    throw new Error(
+      `YouTube's bot-detection policies are restricting direct cloud server playback for "${metadata.title}". ` +
+      `Please download the audio or video file and upload it directly in the "Upload File" tab for instant, unrestricted clip generation.`
+    );
+  }
+
   await ensurePlatformEvaluator();
 
   const MAX_AUDIO_BYTES = 5 * 1024 * 1024; // 5 MB ceiling (~10-14 min audio, downloads in ~1s)
