@@ -160,7 +160,7 @@ const server = http.createServer(async (req, res) => {
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'flowzora-yt-'));
       try {
         const payload = JSON.parse(rawBody);
-        const { url: ytUrl, videoId = `yt_${Date.now()}` } = payload;
+        const { url: ytUrl, videoId = `yt_${Date.now()}`, cookie } = payload;
 
         if (!ytUrl) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -170,8 +170,33 @@ const server = http.createServer(async (req, res) => {
         console.log(`[Worker] Extracting audio for YouTube video: ${videoId}`);
         const outputPath = path.join(tempDir, `audio_${videoId}.m4a`);
 
-        // Use yt-dlp to download lightweight audio
-        const ytdlpCmd = `yt-dlp -f "ba[ext=m4a]/ba/b" --max-filesize 20M -o "${outputPath}" "${ytUrl}"`;
+        // Handle cookie authentication for yt-dlp if provided
+        let cookieArg = '';
+        const cookieData = cookie || process.env.YOUTUBE_COOKIE || '';
+        if (cookieData) {
+          const cookieFilePath = path.join(tempDir, 'cookies.txt');
+          if (cookieData.includes('\t') || cookieData.includes('# Netscape')) {
+            await fs.writeFile(cookieFilePath, cookieData, 'utf8');
+          } else {
+            // Convert 'name=value; name2=value2' to Netscape cookie format for yt-dlp
+            const pairs = cookieData.split(';').map((s) => s.trim()).filter(Boolean);
+            const netscapeLines = [
+              '# Netscape HTTP Cookie File',
+              ...pairs.map((p) => {
+                const eqIdx = p.indexOf('=');
+                if (eqIdx === -1) return '';
+                const name = p.slice(0, eqIdx).trim();
+                const val = p.slice(eqIdx + 1).trim();
+                return `.youtube.com\tTRUE\t/\tTRUE\t2147483647\t${name}\t${val}`;
+              }).filter(Boolean),
+            ];
+            await fs.writeFile(cookieFilePath, netscapeLines.join('\n'), 'utf8');
+          }
+          cookieArg = `--cookies "${cookieFilePath}"`;
+        }
+
+        // Use yt-dlp with mobile client extractor args to bypass datacenter bot detection
+        const ytdlpCmd = `yt-dlp ${cookieArg} --extractor-args "youtube:player_client=android,web,mweb" -f "ba[ext=m4a]/ba/b" --max-filesize 20M -o "${outputPath}" "${ytUrl}"`;
         await execAsync(ytdlpCmd);
 
         const audioBuf = await fs.readFile(outputPath);

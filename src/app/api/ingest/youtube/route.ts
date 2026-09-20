@@ -68,8 +68,8 @@ export async function POST(req: NextRequest) {
   let videoJobId = `yt-${Date.now()}`;
   let creditDeducted = false;
 
-  /** 9-second hard wall — returns a clean JSON error before Vercel's raw lambda kill at 10-15s */
-  const ROUTE_TIMEOUT_MS = 9_000;
+  /** 25-second hard wall to allow audio streaming + Groq Whisper + Gemini highlight scoring */
+  const ROUTE_TIMEOUT_MS = 25_000;
   let timeoutReached = false;
   const timeoutSignal = new Promise<NextResponse>((resolve) =>
     setTimeout(() => {
