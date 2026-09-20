@@ -25,11 +25,19 @@ services:
     # us-west1 — matches where the existing flowzora-worker already runs.
     region: oregon
 
-    # Free tier: 512 MB RAM, spins down after ~15 min idle.
-    # Cold start (~50s) exceeds the caller's 45s abort in youtube.ts, so the
-    # first request after idle WILL fail. That is acceptable for validating
-    # whether YouTube serves a datacenter IP at all; it is not acceptable for
-    # production. See railway-worker/README.md "Timing budget".
+    # Free tier: 512 MB RAM, spins down after ~15 min idle. A cold start
+    # (~50s) exceeds the caller's 45s abort in youtube.ts, so the first request
+    # after idle fails.
+    #
+    # That is survivable on free: the workspace gets 750 instance-hours/month,
+    # and keeping ONE service warm 24/7 costs ~720h. The ffmpeg worker only
+    # accrues ~3h/month because it idles down, so ~723h total still fits under
+    # the cap. Ping /health every ~10 min from an external free cron to hold
+    # this service awake and the cold-start problem disappears.
+    #
+    # Headroom is thin by design: if the ffmpeg worker gets busier, drop the
+    # ping to active hours only (16h/day = ~480h) rather than blowing the cap.
+    # With no card on file, overage suspends the service rather than billing.
     plan: free
 
     healthCheckPath: /health
