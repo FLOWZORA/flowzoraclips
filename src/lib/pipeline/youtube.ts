@@ -88,7 +88,11 @@ let cachedProxyAgent: any = null;
  * Routes all YouTube requests through a residential / mobile IP to bypass AWS datacenter blocks.
  */
 export async function getProxyAgent(): Promise<any> {
-  const proxyUrl = process.env.YOUTUBE_PROXY_URL || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+  const proxyUrl =
+    process.env.YOUTUBE_PROXY_URL ||
+    process.env.HTTPS_PROXY ||
+    process.env.HTTP_PROXY ||
+    'http://nrzdbzhr-rotate:qusf7ir2dlxm@p.webshare.io:80';
   if (!proxyUrl) return null;
 
   if (!cachedProxyAgent) {
