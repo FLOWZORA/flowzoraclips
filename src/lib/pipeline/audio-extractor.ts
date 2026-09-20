@@ -3,8 +3,17 @@ import os from 'os';
 import fs from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { createRequire } from 'module';
 
 const execFileAsync = promisify(execFile);
+
+// Works in both CJS and ESM runtimes (bare `require` throws under ESM/tsx).
+function getFfmpegPath(): string {
+  const require = createRequire(import.meta.url);
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const installer = require('@ffmpeg-installer/ffmpeg');
+  return installer.path as string;
+}
 
 export async function extractAudioBuffer(
   inputBuffer: Buffer | Uint8Array,
@@ -12,9 +21,7 @@ export async function extractAudioBuffer(
 ): Promise<{ audioBuffer: Buffer; audioFilename: string }> {
   let ffmpegPath: string;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const installer = require('@ffmpeg-installer/ffmpeg');
-    ffmpegPath = installer.path;
+    ffmpegPath = getFfmpegPath();
   } catch (e) {
     throw new Error('FFmpeg not available.');
   }
@@ -41,4 +48,55 @@ export async function extractAudioBuffer(
 export function isVideoFile(filename: string): boolean {
   const ext = path.extname(filename).toLowerCase();
   return ['.mp4','.mov','.avi','.mkv','.webm','.m4v','.wmv','.flv'].includes(ext);
+}
+
+/**
+ * Measures the true media duration in seconds by asking ffmpeg to parse the
+ * container header (`ffmpeg -i` prints `Duration: HH:MM:SS.cs` to stderr).
+ *
+ * This exists because estimating duration from file size (e.g. "1 MB ≈ 1 min")
+ * is wrong for video: bitrate varies wildly by codec/resolution, so a 52 MB
+ * file can be 23 minutes, not 53. Never gate users on a size-based guess.
+ *
+ * Returns null when probing fails so callers can fall back to a heuristic.
+ */
+export async function probeMediaDurationSec(
+  inputBuffer: Buffer | Uint8Array,
+  inputFilename: string
+): Promise<number | null> {
+  let ffmpegPath: string;
+  try {
+    ffmpegPath = getFfmpegPath();
+  } catch (e) {
+    return null;
+  }
+  const tmpDir = os.tmpdir();
+  const uid = 'flowzora_probe_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+  const ext = path.extname(inputFilename).toLowerCase() || '.mp4';
+  const inPath = path.join(tmpDir, uid + '_in' + ext);
+  try {
+    fs.writeFileSync(inPath, inputBuffer as Buffer);
+    try {
+      // No output file: ffmpeg exits non-zero and reports stream info on stderr.
+      await execFileAsync(ffmpegPath, ['-i', inPath]);
+    } catch (probeErr: any) {
+      const output = String(probeErr?.stderr || probeErr?.stdout || probeErr?.message || '');
+      const match = output.match(/Duration:\s*(\d+):(\d+):([\d.]+)/);
+      if (match) {
+        const hours = Number(match[1]);
+        const minutes = Number(match[2]);
+        const seconds = Number(match[3]);
+        const total = hours * 3600 + minutes * 60 + seconds;
+        if (Number.isFinite(total) && total > 0) {
+          console.log('[AudioExtractor] Probed media duration: ' + total.toFixed(1) + 's (' + inputFilename + ')');
+          return total;
+        }
+      }
+      console.warn('[AudioExtractor] Could not parse media duration for ' + inputFilename);
+      return null;
+    }
+    return null;
+  } finally {
+    try { fs.unlinkSync(inPath); } catch (_) {}
+  }
 }

@@ -3,12 +3,39 @@ import { runTextPipeline } from '@/lib/pipeline/pipeline-orchestrator';
 import { SourceLanguage, ScriptPreference } from '@/lib/pipeline/types';
 import { validateProcessingEligibility, deductCredit, refundCreditOnFailure } from '@/lib/billing/credits';
 import { checkSpendKillSwitch, recordApiSpend } from '@/lib/billing/kill-switch';
-import { extractAudioBuffer, isVideoFile } from '@/lib/pipeline/audio-extractor';
+import { extractAudioBuffer, isVideoFile, probeMediaDurationSec } from '@/lib/pipeline/audio-extractor';
 import { inMemoryR2, getBufferFromR2 } from '@/lib/storage/r2';
 import { inMemoryClips } from '@/lib/pipeline/video-exporter';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+
+/**
+ * Resolves the media duration used for the eligibility gate.
+ * Prefers a real ffmpeg probe of the container; falls back to the extracted
+ * CBR-64kbps MP3 size (bytes / 8000 = seconds) for video; last resort is the
+ * legacy file-size heuristic. Never returns a size-based guess when a real
+ * measurement is available.
+ */
+async function resolveMeasuredDuration(
+  sourceBuffer: Buffer,
+  originalFilename: string,
+  extractedAudio: Buffer | undefined
+): Promise<number> {
+  const probedSec = await probeMediaDurationSec(sourceBuffer, originalFilename).catch(() => null);
+  if (probedSec && Number.isFinite(probedSec) && probedSec > 0) {
+    console.log(`[API] Duration for eligibility: ${Math.round(probedSec)}s (probed from container)`);
+    return Math.max(1, Math.min(7200, Math.round(probedSec)));
+  }
+  if (extractedAudio && extractedAudio.length > 0 && isVideoFile(originalFilename)) {
+    const fromAudio = Math.round(extractedAudio.length / 8000);
+    console.log(`[API] Duration for eligibility: ${fromAudio}s (fallback: 64kbps audio size)`);
+    return Math.max(1, Math.min(7200, fromAudio));
+  }
+  const legacy = Math.max(30, Math.min(3600, Math.round((sourceBuffer.length / (1024 * 1024)) * 60)));
+  console.log(`[API] Duration for eligibility: ${legacy}s (fallback: legacy size heuristic)`);
+  return legacy;
+}
 
 export async function POST(req: NextRequest) {
   let activeUserId = 'demo-user-1';
@@ -82,8 +109,9 @@ export async function POST(req: NextRequest) {
           audioBuffer = rawBuffer;
         }
 
-        // Estimate duration: MP3 at 64kbps is ~0.5 MB/min; raw video ~10-50 MB/min
-        estimatedDurationSec = Math.max(30, Math.min(3600, Math.round((file.size / (1024 * 1024)) * 60)));
+        // Measure true duration from the container header — never guess from
+        // file size (video bitrate varies: a 52 MB file can be 23 min, not 53).
+        estimatedDurationSec = await resolveMeasuredDuration(rawBuffer, file.name, audioBuffer);
       }
     } else {
       const body = await req.json().catch(() => ({}));
@@ -133,7 +161,7 @@ export async function POST(req: NextRequest) {
           } else {
             audioBuffer = r2Buffer;
           }
-          estimatedDurationSec = Math.max(30, Math.min(3600, Math.round((r2Buffer.length / (1024 * 1024)) * 60)));
+          estimatedDurationSec = await resolveMeasuredDuration(r2Buffer, body.filename || filename, audioBuffer);
         } else {
           return NextResponse.json(
             { success: false, error: 'Could not retrieve media file from Cloudflare R2 storage. Please re-upload or try again.' },
@@ -166,7 +194,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Validate user credit balance and <=10 min free cap
+    // 4. Validate user credit balance and serverless duration cap (measured, not estimated)
     const eligibility = await validateProcessingEligibility(activeUserId, estimatedDurationSec);
     if (!eligibility.allowed) {
       return NextResponse.json(

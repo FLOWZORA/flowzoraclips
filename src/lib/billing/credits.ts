@@ -7,16 +7,17 @@ export const MAX_PAID_VIDEO_DURATION_SEC = 7200; // 120 minutes (2 hours) max pr
 /**
  * Hard ceiling imposed by the serverless runtime, not by any pricing plan.
  *
- * Vercel Hobby caps a function at 60s and the ingest route walls off at 55s.
- * A measured 23-minute video used the entire budget -- worker extraction ~30s
- * plus Whisper on 11.6 MB -- and returned in 55.6s, i.e. it passed by
- * milliseconds and would 504 more often than not in production.
+ * Vercel Hobby caps a function at 60s. Direct file uploads extract audio with
+ * local ffmpeg (seconds) and transcribe via Groq Whisper (fast, free), so
+ * sources up to ~30 minutes comfortably fit: a 30-min video yields ~14 MB of
+ * 64kbps MP3, well under Groq's 25 MB single-call limit (~52 min of audio).
  *
- * 10 minutes keeps extraction + transcription + ranking comfortably inside
- * that wall. Raising it requires a bigger runtime budget (Vercel Pro allows
- * 300s) or moving the pipeline behind an async job queue.
+ * Duration is measured from the real container header (ffmpeg probe), never
+ * guessed from file size. Raising this further requires a bigger runtime
+ * budget (Vercel Pro allows 300s) or moving the pipeline behind an async
+ * job queue.
  */
-export const MAX_SERVERLESS_DURATION_SEC = 600; // 10 minutes
+export const MAX_SERVERLESS_DURATION_SEC = 1800; // 30 minutes
 
 export interface CreditEligibilityResult {
   allowed: boolean;
@@ -39,7 +40,7 @@ export async function validateProcessingEligibility(
     if (durationSeconds > MAX_SERVERLESS_DURATION_SEC) {
       return {
         allowed: false,
-        reason: `Video length (${Math.round(durationSeconds / 60)} min) exceeds the ${Math.round(MAX_SERVERLESS_DURATION_SEC / 60)}-minute processing limit. Longer videos cannot finish inside the serverless time budget — trim the clip, or upload a shorter section in the "Upload File" tab.`,
+        reason: `Video length (${Math.round(durationSeconds / 60)} min) exceeds the ${Math.round(MAX_SERVERLESS_DURATION_SEC / 60)}-minute processing limit. Longer videos cannot finish inside the serverless time budget — trim the clip, or upload a shorter section.`,
         creditsRemaining: 999,
         plan: 'free_beta',
         isFreeTier: true,

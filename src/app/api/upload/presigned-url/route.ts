@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Validate user eligibility (free tier cap <=10 min)
+    // Validate user eligibility (serverless duration cap, measured from real media duration)
     const eligibility = await validateProcessingEligibility(userId, estimatedDurationSec);
     if (!eligibility.allowed) {
       return NextResponse.json(

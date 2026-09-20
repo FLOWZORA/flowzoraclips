@@ -39,6 +39,11 @@ export default function HeroUploader() {
   const [sourceMediaUrl, setSourceMediaUrl] = useState<string>('');
   const [sourceMediaType, setSourceMediaType] = useState<'video' | 'audio'>('video');
   const [sourceVideoKey, setSourceVideoKey] = useState<string>('');
+  // Real media duration in seconds, probed from the file header (never guessed
+  // from file size). Must stay in sync with MAX_SERVERLESS_DURATION_SEC in
+  // src/lib/billing/credits.ts.
+  const MAX_VIDEO_DURATION_SEC = 1800; // 30 minutes
+  const [sourceDurationSec, setSourceDurationSec] = useState<number | null>(null);
 
   React.useEffect(() => {
     if (selectedFile) {
@@ -46,13 +51,34 @@ export default function HeroUploader() {
       setSourceMediaUrl(url);
       setSourceMediaType(selectedFile.type.startsWith('video') ? 'video' : 'audio');
       setSourceVideoKey('');
+      setSourceDurationSec(null);
+      // Probe the true duration from the container header so the UI and the
+      // presign gate use the real length, not a size-based guess.
+      let cancelled = false;
+      const probeEl = document.createElement(
+        selectedFile.type.startsWith('audio') ? 'audio' : 'video'
+      );
+      probeEl.preload = 'metadata';
+      probeEl.onloadedmetadata = () => {
+        if (!cancelled && Number.isFinite(probeEl.duration) && probeEl.duration > 0) {
+          setSourceDurationSec(probeEl.duration);
+        }
+        probeEl.removeAttribute('src');
+      };
+      probeEl.onerror = () => {
+        if (!cancelled) setSourceDurationSec(null);
+      };
+      probeEl.src = url;
       return () => {
+        cancelled = true;
+        probeEl.removeAttribute('src');
         URL.revokeObjectURL(url);
       };
     } else {
       setSourceMediaUrl('');
       setSourceMediaType('video');
       setSourceVideoKey('');
+      setSourceDurationSec(null);
     }
   }, [selectedFile]);
 
@@ -108,6 +134,16 @@ export default function HeroUploader() {
       }
 
       const fileSizeMB = selectedFile.size / (1024 * 1024);
+
+      // Fail fast on the REAL probed duration (not file size) before uploading.
+      if (sourceDurationSec !== null && sourceDurationSec > MAX_VIDEO_DURATION_SEC) {
+        setErrorMessage(
+          `Video length (${Math.round(sourceDurationSec / 60)} min) exceeds the ${Math.round(MAX_VIDEO_DURATION_SEC / 60)}-minute processing limit. Longer videos cannot finish inside the serverless time budget — trim the clip, or upload a shorter section.`
+        );
+        setIsProcessing(false);
+        return;
+      }
+
       let uploadedR2FileKey: string | null = null;
 
       // STEP 1: Direct Cloudflare R2 Upload (bypasses Vercel 4.5MB serverless limit)
@@ -121,6 +157,10 @@ export default function HeroUploader() {
             contentType: selectedFile.type || 'video/mp4',
             fileSize: selectedFile.size,
             userId: activeUserId,
+            // Real probed duration so the presign gate enforces the true length.
+            ...(sourceDurationSec !== null
+              ? { estimatedDurationSec: Math.round(sourceDurationSec) }
+              : {}),
           }),
         });
 
@@ -468,7 +508,14 @@ export default function HeroUploader() {
                   <span>
                     {selectedFile.name}{' '}
                     <span className="text-xs font-mono text-[#A1A1A1]">
-                      ({(selectedFile.size / (1024 * 1024)).toFixed(1)}&nbsp;MB)
+                      ({(selectedFile.size / (1024 * 1024)).toFixed(1)}&nbsp;MB
+                      {sourceDurationSec !== null && (
+                        <span>
+                          {' • '}
+                          {(sourceDurationSec / 60).toFixed(1)}&nbsp;min
+                        </span>
+                      )}
+                      )
                     </span>
                   </span>
                 ) : (
