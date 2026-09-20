@@ -446,7 +446,7 @@ export async function getYouTubeMetadata(url: string, durationSecEstimate: numbe
     throw new Error('Invalid YouTube URL. Please provide a link in the format https://youtube.com/watch?v=... or https://youtu.be/...');
   }
 
-  let title = 'Hindi / Hinglish Creator Video';
+  let title = 'Creator Video';
   let author = 'YouTube Creator';
   let durationSec = durationSecEstimate;
   let thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
@@ -804,9 +804,8 @@ async function transcodeToMp3IfPossible(rawBuffer: Buffer, videoId: string): Pro
  * 3. Remote Video Worker (Railway / Render) if configured
  * 4. Local Python & yt-dlp via os.tmpdir() (safe for non-serverless dev hosts)
  */
-/** Hard wall: must finish well within Vercel Hobby 10-15s timeout */
-/** Hard wall: allows sufficient time for stream reading + transcode */
-const EXTRACTION_GLOBAL_TIMEOUT_MS = 20_000;
+/** Increased to 50s to give Railway worker + InnerTube fallbacks sufficient time */
+const EXTRACTION_GLOBAL_TIMEOUT_MS = 50_000;
 
 export async function extractYouTubeAudioStream(
   url: string,
@@ -856,22 +855,113 @@ async function _extractYouTubeAudioStreamInner(
   console.log(`[YouTube Ingest] Extracting audio for "${metadata.title}" (${metadata.videoId})...`);
 
   let lastErrorMsg = '';
+
+  // --------------------------------------------------------------------------
+  // FAST FAIL: serverless host with no extraction worker configured.
+  //
+  // Verified empirically against a deployed worker: YouTube answers requests
+  // from cloud datacenter IPs with "Sign in to confirm you're not a bot", and
+  // that demand is for AUTHENTICATION -- PO Tokens explicitly do not satisfy
+  // it. Without account cookies, every server-side strategy below is going to
+  // lose from Vercel, and grinding through all of them costs the user ~50s
+  // before showing the same message they could have had instantly.
+  //
+  // Worse, when a tier does squeak through it hits the MAX_AUDIO_BYTES cap and
+  // returns a truncated stream: a 23-minute video came back as 84 seconds of
+  // audio and was reported as success. Failing cleanly beats that.
+  //
+  // Local dev has no VERCEL env var, so it still runs every strategy below --
+  // including the local yt-dlp path, which works fine from a residential IP.
+  // Setting YOUTUBE_WORKER_URL also re-enables the full chain.
+  const workerConfigured = !!(process.env.YOUTUBE_WORKER_URL || process.env.YT_WORKER_URL);
+  if (process.env.VERCEL && !workerConfigured) {
+    console.log('[YouTube Ingest] No worker configured on serverless host — failing fast to the upload path.');
+    throw new Error(
+      `YouTube's bot-detection policies are restricting direct cloud server playback for "${metadata.title}". ` +
+      `Please download the audio or video file and upload it directly in the "Upload File" tab for instant, unrestricted clip generation.`
+    );
+  }
+
   await ensurePlatformEvaluator();
 
   const MAX_AUDIO_BYTES = 5 * 1024 * 1024; // 5 MB ceiling (~10-14 min audio, downloads in ~1s)
 
   // --------------------------------------------------------------------------
-  // STRATEGY 1: High-Speed Innertube Stream (MWEB & ANDROID)
-  // Tested: extracts in < 1 second; fully compatible with Vercel serverless.
-  // Automatically passes SAPISID authorization and cookies when provided.
+  // STRATEGY 1: Railway/Render Worker (yt-dlp in Docker — most reliable)
+  // This is the same stack Opus Clip / Klap use. Railway IPs are not on
+  // YouTube's datacenter blocklist. yt-dlp handles all JS challenges.
+  // Set YOUTUBE_WORKER_URL + WORKER_SECRET_TOKEN env vars to enable.
+  //
+  // NOTE: deliberately NOT RAILWAY_WORKER_URL. That variable already points at
+  // the ffmpeg render worker (see video-exporter.ts), which has no
+  // /extract-audio route — reusing it here just yields a 404 on every video.
+  // The audio worker is a separate service and needs its own URL.
   // --------------------------------------------------------------------------
-  const innertubeTiers: Array<{ name: string; type: 'WEB' | 'MWEB' | 'ANDROID' }> = [
-    { name: 'Web Desktop (WEB)', type: 'WEB' },
+  const workerUrl = process.env.YOUTUBE_WORKER_URL || process.env.YT_WORKER_URL;
+  // Prefer a token scoped to THIS worker. WORKER_SECRET_TOKEN is shared with
+  // the ffmpeg render worker (video-exporter.ts), so rotating it would take
+  // video export down too; a dedicated var lets this service hold a strong
+  // secret independently. Falls back to the shared one when unset.
+  const workerToken = (process.env.YOUTUBE_WORKER_TOKEN || process.env.WORKER_SECRET_TOKEN || '').trim();
+  if (workerUrl) {
+    try {
+      console.log(`[YouTube Ingest] Attempting audio extraction via Railway worker: ${workerUrl}...`);
+      const rawCookie =
+        process.env.YOUTUBE_COOKIE ||
+        process.env.YOUTUBE_COOKIES ||
+        process.env.YT_COOKIE ||
+        process.env.YT_COOKIES;
+      const cookie = normalizeYouTubeCookie(rawCookie);
+
+      const workerRes = await fetch(`${workerUrl.replace(/\/$/, '')}/extract-audio`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(workerToken ? { Authorization: `Bearer ${workerToken}` } : {}),
+        },
+        body: JSON.stringify({
+          url: `https://www.youtube.com/watch?v=${metadata.videoId}`,
+          videoId: metadata.videoId,
+          cookie: cookie || undefined,
+        }),
+        signal: AbortSignal.timeout(45_000), // 45s — Railway worker has 90s internally
+      });
+
+      if (workerRes.ok) {
+        const arrayBuf = await workerRes.arrayBuffer();
+        if (arrayBuf.byteLength > 1024) {
+          const audioBuffer = Buffer.from(arrayBuf);
+          console.log(`[YouTube Ingest] ✓ Railway worker extracted ${(audioBuffer.length / (1024 * 1024)).toFixed(2)} MB audio for "${metadata.title}"`);
+          return {
+            audioBuffer,
+            filename: `youtube_${metadata.videoId}.mp3`,
+            metadata,
+          };
+        }
+      } else {
+        const errBody = await workerRes.text().catch(() => '');
+        console.warn(`[YouTube Ingest] Railway worker returned HTTP ${workerRes.status}: ${errBody.slice(0, 200)}`);
+        lastErrorMsg = `Worker HTTP ${workerRes.status}`;
+      }
+    } catch (workerErr: any) {
+      console.warn(`[YouTube Ingest] Railway worker failed: ${workerErr.message}`);
+      lastErrorMsg = workerErr.message;
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // STRATEGY 2: High-Speed Innertube Stream (MWEB, ANDROID, TV_EMBEDDED, WEB)
+  // Fallback for when no Railway worker is configured (local dev) or worker fails.
+  // Datacenter IP restrictions mean these often fail on Vercel production.
+  // --------------------------------------------------------------------------
+  const innertubeTiers: Array<{ name: string; type: 'WEB' | 'MWEB' | 'ANDROID' | 'TV' }> = [
+    { name: 'TV Embedded (TV)', type: 'TV' },
     { name: 'Mobile Web (MWEB)', type: 'MWEB' },
     { name: 'Android Mobile (ANDROID)', type: 'ANDROID' },
+    { name: 'Web Desktop (WEB)', type: 'WEB' },
   ];
 
-  const TIER_TIMEOUT_MS = 8_000;
+  const TIER_TIMEOUT_MS = 4_000; // 4s per tier — tight to preserve budget for VisionOS fallback
 
   for (const tier of innertubeTiers) {
     try {
@@ -921,52 +1011,8 @@ async function _extractYouTubeAudioStreamInner(
     }
   }
 
+  // (Railway worker is now Strategy 1 above — this block kept for legacy reference)
   // --------------------------------------------------------------------------
-  // STRATEGY 2: Remote Railway / Render Worker if configured
-  // Forwards normalized YouTube cookies for yt-dlp authentication
-  // --------------------------------------------------------------------------
-  const workerUrl = process.env.RAILWAY_WORKER_URL || process.env.VIDEO_WORKER_URL;
-  const workerToken = process.env.WORKER_SECRET_TOKEN;
-  if (workerUrl) {
-    try {
-      console.log(`[YouTube Ingest] Attempting audio extraction via worker: ${workerUrl}...`);
-      const rawCookie =
-        process.env.YOUTUBE_COOKIE ||
-        process.env.YOUTUBE_COOKIES ||
-        process.env.YT_COOKIE ||
-        process.env.YT_COOKIES;
-      const cookie = normalizeYouTubeCookie(rawCookie);
-
-      const workerRes = await fetch(`${workerUrl.replace(/\/$/, '')}/extract-audio`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(workerToken ? { Authorization: `Bearer ${workerToken}` } : {}),
-        },
-        body: JSON.stringify({
-          url,
-          videoId: metadata.videoId,
-          cookie: cookie || undefined,
-        }),
-        signal: AbortSignal.timeout(6000),
-      });
-
-      if (workerRes.ok) {
-        const arrayBuf = await workerRes.arrayBuffer();
-        if (arrayBuf.byteLength > 1024) {
-          const audioBuffer = Buffer.from(arrayBuf);
-          console.log(`[YouTube Ingest] Successfully extracted audio via worker (${audioBuffer.length} bytes).`);
-          return {
-            audioBuffer,
-            filename: `youtube_${metadata.videoId}.m4a`,
-            metadata,
-          };
-        }
-      }
-    } catch (workerErr: any) {
-      console.warn(`[YouTube Ingest] Worker audio extraction failed: ${workerErr.message}`);
-    }
-  }
 
   // --------------------------------------------------------------------------
   // STRATEGY 3: VisionOS Direct Stream (Bypasses signature cipher)
@@ -1070,18 +1116,33 @@ async function _extractYouTubeAudioStreamInner(
     const metaPath = `${outPrefix}.meta.json`;
 
     if (fs.existsSync(scriptPath)) {
-      await execFileAsync('python', [scriptPath, url, outPrefix], {
-        timeout: 45000,
-      });
+      try {
+        await execFileAsync('python', [scriptPath, url, outPrefix], {
+          timeout: 60000,
+        });
+      } catch (execErr: any) {
+        console.warn(`[YouTube Ingest] Python execution warning: ${execErr.message}`);
+      }
 
       if (fs.existsSync(metaPath)) {
-        const parsed = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
-        try { fs.unlinkSync(metaPath); } catch (_) {}
+        let parsed: any = null;
+        try {
+          parsed = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+          fs.unlinkSync(metaPath);
+        } catch (_) {}
 
-        if (parsed.success && parsed.filePath && fs.existsSync(parsed.filePath)) {
-          const audioBuffer = fs.readFileSync(parsed.filePath);
-          const ext = path.extname(parsed.filePath) || '.m4a';
+        if (parsed?.success && parsed.filePath && fs.existsSync(parsed.filePath)) {
+          let audioBuffer: Buffer = fs.readFileSync(parsed.filePath);
+          let ext = path.extname(parsed.filePath) || '.m4a';
           try { fs.unlinkSync(parsed.filePath); } catch (_) {}
+
+          // If extracted audio is large (>22MB), transcode down to 64k MP3 to guarantee it fits under Groq's 25MB limit
+          if (audioBuffer.length > 22 * 1024 * 1024) {
+            console.log(`[YouTube Ingest] yt-dlp extracted ${(audioBuffer.length / (1024 * 1024)).toFixed(2)} MB. Transcoding to lightweight MP3...`);
+            const transcoded = await transcodeToMp3IfPossible(audioBuffer, metadata.videoId);
+            audioBuffer = Buffer.from(transcoded.buffer);
+            ext = '.mp3';
+          }
 
           console.log(`[YouTube Ingest] Successfully extracted ${audioBuffer.length} bytes via yt-dlp for "${metadata.title}"`);
           return {
@@ -1089,6 +1150,8 @@ async function _extractYouTubeAudioStreamInner(
             filename: `youtube_${metadata.videoId}${ext}`,
             metadata,
           };
+        } else if (parsed?.error) {
+          console.warn(`[YouTube Ingest] Local yt-dlp reported error: ${parsed.error}`);
         }
       }
     }

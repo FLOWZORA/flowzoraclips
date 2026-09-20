@@ -19,15 +19,27 @@ def main():
     outtmpl = f"{out_prefix}.%(ext)s"
     meta_path = f"{out_prefix}.meta.json"
 
+    # Ensure output directory exists
+    out_dir = os.path.dirname(out_prefix)
+    if out_dir and not os.path.exists(out_dir):
+        os.makedirs(out_dir, exist_ok=True)
+
     ydl_opts = {
-        'format': 'ba[ext=m4a]/ba[ext=mp3]/ba',
+        'format': 'ba[abr<=96]/ba[ext=m4a]/ba[ext=mp3]/ba/b',
         'outtmpl': outtmpl,
-        'max_filesize': 20 * 1024 * 1024,
+        'max_filesize': 50 * 1024 * 1024,
+        'remote_components': ['ejs:github'],
+        'js_runtimes': {'node': {}},
         'quiet': True,
         'no_warnings': True,
         'noprogress': True,
         'logger': NullLogger(),
     }
+
+    # Pass cookies if available in environment
+    cookie_content = os.environ.get('YOUTUBE_COOKIE') or os.environ.get('YT_COOKIE')
+    if cookie_content and os.path.exists(cookie_content):
+        ydl_opts['cookiefile'] = cookie_content
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

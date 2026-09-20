@@ -14,8 +14,7 @@ import {
 import { checkSpendKillSwitch, recordApiSpend } from '@/lib/billing/kill-switch';
 import { inMemoryClips } from '@/lib/pipeline/video-exporter';
 
-// Allow up to 60s runtime for audio streaming, Groq transcription & Gemini highlight ranking
-// NOTE: Vercel Hobby plan ignores this and hard-kills at 10-15s. All internal ops must finish < 9s.
+// Allow up to 60s runtime for Railway worker call, Groq transcription & Gemini highlight ranking
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
@@ -68,8 +67,8 @@ export async function POST(req: NextRequest) {
   let videoJobId = `yt-${Date.now()}`;
   let creditDeducted = false;
 
-  /** 25-second hard wall to allow audio streaming + Groq Whisper + Gemini highlight scoring */
-  const ROUTE_TIMEOUT_MS = 25_000;
+  /** 55-second hard wall — allows Railway worker (45s) + Groq + Gemini to finish comfortably */
+  const ROUTE_TIMEOUT_MS = 55_000;
   let timeoutReached = false;
   const timeoutSignal = new Promise<NextResponse>((resolve) =>
     setTimeout(() => {
@@ -79,8 +78,7 @@ export async function POST(req: NextRequest) {
           {
             success: false,
             error:
-              "YouTube's cloud bot-detection is restricting direct server playback for this video. " +
-              'Please download the audio or video file and upload it directly in the "Upload File" tab for instant clip generation.',
+              'Processing timed out. Please download the audio or video file and upload it directly in the "Upload File" tab for instant clip generation.',
           },
           { status: 504 }
         )

@@ -18,7 +18,7 @@ import {
   ChevronDown,
   X,
 } from 'lucide-react';
-import { CandidateClip, AspectRatio, ScriptPreference } from '@/lib/pipeline/types';
+import { CandidateClip, AspectRatio } from '@/lib/pipeline/types';
 import ClipVideoPreview from '@/components/ClipVideoPreview';
 // import CheckoutButton from '@/components/CheckoutButton';
 import SocialCopyModal from '@/components/SocialCopyModal';
@@ -34,8 +34,8 @@ interface NaiveClip {
 
 export default function HeroUploader() {
   const [activeTab, setActiveTab] = useState<'upload' | 'url'>('upload');
-  const [language, setLanguage] = useState<'hinglish' | 'hindi' | 'english' | 'auto'>('hinglish');
-  const [scriptPreference, setScriptPreference] = useState<ScriptPreference>('romanized');
+  const language = 'english';
+  const scriptPreference = 'english';
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('9:16');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [sourceMediaUrl, setSourceMediaUrl] = useState<string>('');
@@ -295,7 +295,7 @@ export default function HeroUploader() {
 
       // STEP 2: Highlight Extraction Pipeline
       setStatusMessage('Transcribing speech with word-level timestamps...');
-      setTimeout(() => setStatusMessage('Detecting English & Hindi filler words...'), 350);
+      setTimeout(() => setStatusMessage('Detecting filler words...'), 350);
       setTimeout(() => setStatusMessage('Snapping windows to semantic sentence boundaries...'), 700);
       setTimeout(() => setStatusMessage('Evaluating Hook, Coherence, Emotion & Trend via Gemini 2.5 Flash...'), 1100);
 
@@ -552,41 +552,8 @@ export default function HeroUploader() {
             </button>
           </div>
 
-          {/* Language, Script & Aspect Ratio Selector Dropdowns */}
+          {/* Aspect Ratio Selector */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2.5 w-full lg:w-auto">
-            <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
-              <label className="text-[11px] font-mono text-[#A1A1A1] shrink-0">AUDIO:</label>
-              <div className="relative flex-1">
-                <select
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value as any)}
-                  className="w-full appearance-none rounded-md border border-[#262626] bg-[#111111] pl-2.5 pr-7 py-1.5 text-xs text-[#EDEDED] focus:outline-none focus:border-[#555555] transition-colors cursor-pointer min-h-[34px]"
-                >
-                  <option value="hinglish" className="bg-[#111111] text-[#EDEDED]">Hinglish</option>
-                  <option value="hindi" className="bg-[#111111] text-[#EDEDED]">Hindi (हिन्दी)</option>
-                  <option value="english" className="bg-[#111111] text-[#EDEDED]">English</option>
-                  <option value="auto" className="bg-[#111111] text-[#EDEDED]">Auto-detect</option>
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#A1A1A1]" />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
-              <label className="text-[11px] font-mono text-[#A1A1A1] shrink-0">CAPTIONS:</label>
-              <div className="relative flex-1">
-                <select
-                  value={scriptPreference}
-                  onChange={(e) => setScriptPreference(e.target.value as ScriptPreference)}
-                  className="w-full appearance-none rounded-md border border-[#262626] bg-[#111111] pl-2.5 pr-7 py-1.5 text-xs text-[#EDEDED] focus:outline-none focus:border-[#555555] transition-colors cursor-pointer min-h-[34px]"
-                >
-                  <option value="romanized" className="bg-[#111111] text-[#EDEDED]">Romanized Hindi</option>
-                  <option value="english" className="bg-[#111111] text-[#EDEDED]">English</option>
-                  <option value="devanagari" className="bg-[#111111] text-[#EDEDED]">देवनागरी (Devanagari)</option>
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#A1A1A1]" />
-              </div>
-            </div>
-
             <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
               <label className="text-[11px] font-mono text-[#A1A1A1] shrink-0">RATIO:</label>
               <div className="relative flex-1">
@@ -790,40 +757,96 @@ export default function HeroUploader() {
             <Sparkles className="h-4 w-4" />
             <span>100% Free Public Beta • No Sign-In Required • Unlimited Clips</span>
           </div>
-          <div>Hindi &amp; Hinglish AI • Scene-Aware 9:16 Reframe</div>
+          <div>English AI Subtitles • Scene-Aware 9:16 Reframe</div>
         </div>
 
         {/* Error Prompt Banner */}
-        {errorMessage && (
-          <div className="mt-4 rounded-xl border border-[#EF4444]/40 bg-[#EF4444]/10 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-start gap-2.5">
-              <AlertTriangle className="h-5 w-5 text-[#EF4444] shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs font-semibold text-white">{errorMessage}</p>
-                {activeTab === 'url' && (errorMessage.includes('Upload File') || errorMessage.includes('bot-detection') || errorMessage.includes('restricting') || errorMessage.includes('login required')) && (
-                  <p className="mt-1.5 text-[11px] text-[#A1A1A1]">
-                    💡 <strong>Quick Fix:</strong> Click below to switch to the Upload tab. Your video title and settings are preserved so you can simply drop the audio or video file for instant, unrestricted clip generation via Cloudflare R2.
-                  </p>
-                )}
-              </div>
-            </div>
+        {errorMessage && (() => {
+          const isBotDetection = activeTab === 'url' && (
+            errorMessage.includes('bot-detection') ||
+            errorMessage.includes('restricting') ||
+            errorMessage.includes('timed out') ||
+            errorMessage.includes('Upload File') ||
+            errorMessage.includes('login required') ||
+            errorMessage.includes('Sign in to confirm')
+          );
+          // cobalt reads the raw URL from the hash, so pass it unencoded:
+          // that works whether or not cobalt decodeURIComponent()s it, while a
+          // pre-encoded URL only works if it does.
+          const cobaltUrl = youtubeUrl
+            ? `https://cobalt.tools/#${youtubeUrl.trim()}`
+            : 'https://cobalt.tools';
 
-            <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
-              {activeTab === 'url' && (errorMessage.includes('Upload File') || errorMessage.includes('bot-detection') || errorMessage.includes('restricting') || errorMessage.includes('login required')) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('upload');
-                    setErrorMessage(null);
-                  }}
-                  className="rounded-lg bg-white px-3.5 py-1.5 text-xs font-bold text-black hover:bg-[#E5E5E5] transition-colors cursor-pointer shrink-0 shadow-sm"
-                >
-                  Switch to Upload File Tab (Keep Settings) →
-                </button>
+          return (
+            <div className={`mt-4 rounded-xl border p-4 flex flex-col gap-3 ${isBotDetection ? 'border-[#F59E0B]/40 bg-[#F59E0B]/8' : 'border-[#EF4444]/40 bg-[#EF4444]/10'}`}>
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className={`h-5 w-5 shrink-0 mt-0.5 ${isBotDetection ? 'text-[#F59E0B]' : 'text-[#EF4444]'}`} />
+                <div className="flex-1 min-w-0">
+                  {isBotDetection ? (
+                    <>
+                      <p className="text-xs font-semibold text-white">
+                        YouTube blocked direct server access for this video.
+                      </p>
+                      <p className="mt-1.5 text-[11px] text-[#A1A1A1] leading-relaxed">
+                        YouTube blocks cloud servers from downloading videos directly — this affects all AI clip tools (Opus Clip, Klap, etc.). The fix is simple:
+                      </p>
+                      <ol className="mt-2 space-y-1 text-[11px] text-[#A1A1A1]">
+                        <li className="flex items-start gap-1.5">
+                          <span className="text-[#F59E0B] font-bold shrink-0">1.</span>
+                          <span>
+                            Click{' '}
+                            <a
+                              href={cobaltUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[#F59E0B] font-semibold underline underline-offset-2 hover:text-white transition-colors"
+                            >
+                              cobalt.tools →
+                            </a>
+                            {' '}(free), paste the same URL, download the audio as MP3
+                          </span>
+                        </li>
+                        <li className="flex items-start gap-1.5">
+                          <span className="text-[#F59E0B] font-bold shrink-0">2.</span>
+                          <span>Switch to the Upload tab below and drop that MP3 — instant, unrestricted processing</span>
+                        </li>
+                      </ol>
+                      <p className="mt-2 text-[10px] text-[#6B7280] leading-relaxed break-words">
+                        Details: {errorMessage}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-xs font-semibold text-white">{errorMessage}</p>
+                  )}
+                </div>
+              </div>
+
+              {isBotDetection && (
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <a
+                    href={cobaltUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded-lg bg-[#F59E0B] px-3.5 py-1.5 text-xs font-bold text-black hover:bg-[#FBBF24] transition-colors cursor-pointer shadow-sm"
+                  >
+                    Download Audio Free (cobalt.tools) ↗
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('upload');
+                      setErrorMessage(null);
+                    }}
+                    className="flex-1 sm:flex-initial rounded-lg bg-white px-3.5 py-1.5 text-xs font-bold text-black hover:bg-[#E5E5E5] transition-colors cursor-pointer shrink-0 shadow-sm"
+                  >
+                    Switch to Upload Tab →
+                  </button>
+                </div>
               )}
             </div>
-          </div>
-        )}
+          );
+        })()}
+
 
         {/* Action Button & Processing Indicator */}
         <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -1149,7 +1172,7 @@ export default function HeroUploader() {
           clip={previewClip}
           scriptPreference={scriptPreference}
           initialAspectRatio={aspectRatio}
-          onScriptChange={(s) => setScriptPreference(s)}
+          onScriptChange={() => {}}
           onClose={() => setPreviewClip(null)}
           sourceMediaUrl={sourceMediaUrl}
           sourceMediaType={sourceMediaType}

@@ -1,0 +1,59 @@
+# Render Blueprint — FLOWZORA
+#
+# Defines ONLY the YouTube audio worker. The existing ffmpeg render worker
+# (workers/, deployed as `flowzora-worker`) was created manually from the
+# dashboard and is deliberately NOT defined here: bringing it under blueprint
+# management risks recreating it and changing its URL, which would break
+# RAILWAY_WORKER_URL and take video export down with it.
+#
+# Render does not delete services that are absent from a blueprint, so applying
+# this leaves `flowzora-worker` untouched.
+
+services:
+  - type: web
+    name: flowzora-yt-worker
+    runtime: docker
+
+    # NOTE: this service is currently SUSPENDED. YouTube answers cloud
+    # datacenter IPs with "Sign in to confirm you're not a bot", and without
+    # account cookies no server-side strategy gets past it -- see
+    # src/lib/pipeline/youtube.ts for the fast-fail that replaced it. Kept
+    # deployable in case cookies or a residential proxy are added later.
+    branch: main
+
+    dockerfilePath: ./railway-worker/Dockerfile
+    dockerContext: ./railway-worker
+
+    # us-west1 — matches where the existing flowzora-worker already runs.
+    region: oregon
+
+    # Free tier: 512 MB RAM, spins down after ~15 min idle. A cold start
+    # (~50s) exceeds the caller's 45s abort in youtube.ts, so the first request
+    # after idle fails.
+    #
+    # That is survivable on free: the workspace gets 750 instance-hours/month,
+    # and keeping ONE service warm 24/7 costs ~720h. The ffmpeg worker only
+    # accrues ~3h/month because it idles down, so ~723h total still fits under
+    # the cap. Ping /health every ~10 min from an external free cron to hold
+    # this service awake and the cold-start problem disappears.
+    #
+    # Headroom is thin by design: if the ffmpeg worker gets busier, drop the
+    # ping to active hours only (16h/day = ~480h) rather than blowing the cap.
+    # With no card on file, overage suspends the service rather than billing.
+    plan: free
+
+    healthCheckPath: /health
+    # `autoDeploy` is deprecated; autoDeployTrigger replaces it.
+    autoDeployTrigger: commit
+
+    envVars:
+      # Marked `sync: false` so Render prompts for them and never stores
+      # secrets in git.
+      - key: YOUTUBE_WORKER_TOKEN
+        sync: false
+      - key: YOUTUBE_COOKIE
+        sync: false
+
+      # Must stay below the 45s AbortSignal in src/lib/pipeline/youtube.ts.
+      - key: EXTRACT_TIMEOUT_MS
+        value: "40000"
