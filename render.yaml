@@ -14,10 +14,12 @@ services:
     name: flowzora-yt-worker
     runtime: docker
 
-    # NOTE: railway-worker/ currently exists only on this branch. After merging
-    # the PR, change this to `main` (or delete the line to track the default
-    # branch) or deploys will 404 on the Dockerfile.
-    branch: fix/youtube-extraction-worker
+    # NOTE: this service is currently SUSPENDED. YouTube answers cloud
+    # datacenter IPs with "Sign in to confirm you're not a bot", and without
+    # account cookies no server-side strategy gets past it -- see
+    # src/lib/pipeline/youtube.ts for the fast-fail that replaced it. Kept
+    # deployable in case cookies or a residential proxy are added later.
+    branch: main
 
     dockerfilePath: ./railway-worker/Dockerfile
     dockerContext: ./railway-worker
