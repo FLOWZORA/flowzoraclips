@@ -15,10 +15,16 @@ import { checkSpendKillSwitch, recordApiSpend } from '@/lib/billing/kill-switch'
 import { inMemoryClips } from '@/lib/pipeline/video-exporter';
 
 // Allow up to 60s runtime for audio streaming, Groq transcription & Gemini highlight ranking
+// NOTE: Vercel Hobby plan ignores this and hard-kills at 10-15s. All internal ops must finish < 9s.
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 export const revalidate = 0;
+
+/** Races a promise against a timeout, returning a fallback value on expiry */
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
+}
 
 /**
  * GET: Quick metadata preview when user enters a YouTube URL.
@@ -62,7 +68,28 @@ export async function POST(req: NextRequest) {
   let videoJobId = `yt-${Date.now()}`;
   let creditDeducted = false;
 
-  try {
+  /** 9-second hard wall — returns a clean JSON error before Vercel's raw lambda kill at 10-15s */
+  const ROUTE_TIMEOUT_MS = 9_000;
+  let timeoutReached = false;
+  const timeoutSignal = new Promise<NextResponse>((resolve) =>
+    setTimeout(() => {
+      timeoutReached = true;
+      resolve(
+        NextResponse.json(
+          {
+            success: false,
+            error:
+              "YouTube's cloud bot-detection is restricting direct server playback for this video. " +
+              'Please download the audio or video file and upload it directly in the "Upload File" tab for instant clip generation.',
+          },
+          { status: 504 }
+        )
+      );
+    }, ROUTE_TIMEOUT_MS)
+  );
+
+  const workPromise = (async (): Promise<NextResponse> => {
+    try {
 
     // 2. Spend Kill Switch
     const spendStatus = await checkSpendKillSwitch();
@@ -160,4 +187,7 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+  })();
+
+  return Promise.race([workPromise, timeoutSignal]);
 }

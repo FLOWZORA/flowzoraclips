@@ -622,7 +622,33 @@ async function transcodeToMp3IfPossible(rawBuffer: Buffer, videoId: string): Pro
  * 3. Remote Video Worker (Railway / Render) if configured
  * 4. Local Python & yt-dlp via os.tmpdir() (safe for non-serverless dev hosts)
  */
+/** Hard wall: must finish well within Vercel Hobby 10-15s timeout */
+const EXTRACTION_GLOBAL_TIMEOUT_MS = 7_000;
+
 export async function extractYouTubeAudioStream(
+  url: string,
+  userId: string = 'demo-user-1',
+  checkEligibility: boolean = true
+): Promise<{
+  audioBuffer: Buffer;
+  filename: string;
+  metadata: YouTubeVideoMetadata;
+}> {
+  return Promise.race<{ audioBuffer: Buffer; filename: string; metadata: YouTubeVideoMetadata }>([
+    _extractYouTubeAudioStreamInner(url, userId, checkEligibility),
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error(
+          `YouTube's cloud bot-detection is restricting direct server playback for this video. ` +
+          `Please download the audio or video file and upload it directly in the "Upload File" tab for instant clip generation.`
+        )),
+        EXTRACTION_GLOBAL_TIMEOUT_MS
+      )
+    ),
+  ]);
+}
+
+async function _extractYouTubeAudioStreamInner(
   url: string,
   userId: string = 'demo-user-1',
   checkEligibility: boolean = true
@@ -659,41 +685,52 @@ export async function extractYouTubeAudioStream(
     { name: 'Mobile Web', type: 'MWEB' },
   ];
 
+  /** Per-tier ceiling: abort a hanging Innertube download quickly */
+  const TIER_TIMEOUT_MS = 2_500;
+
   for (const tier of clientTiers) {
     try {
       console.log(`[YouTube Ingest] Attempting ${tier.name} audio stream for "${metadata.title}" (${metadata.videoId})...`);
-      const yt = await getInnertubeClient(tier.type);
-      const stream = await yt.download(metadata.videoId, { type: 'audio' });
 
-      if (stream) {
-        const reader = stream.getReader();
-        const chunks: Uint8Array[] = [];
-        let totalBytes = 0;
-        // 12 MB ceiling (~18-22 minutes of audio, comfortably under Groq Whisper 25 MB limit)
-        const MAX_AUDIO_BYTES = 12 * 1024 * 1024;
+      const tierResult = await Promise.race<{ buffer: Buffer; filename: string } | null>([
+        (async () => {
+          const yt = await getInnertubeClient(tier.type);
+          const stream = await yt.download(metadata.videoId, { type: 'audio' });
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          totalBytes += value.length;
-          if (totalBytes >= MAX_AUDIO_BYTES) {
-            try { await reader.cancel(); } catch (_) {}
-            break;
+          if (!stream) return null;
+
+          const reader = stream.getReader();
+          const chunks: Uint8Array[] = [];
+          let totalBytes = 0;
+          // 12 MB ceiling (~18-22 minutes of audio, comfortably under Groq Whisper 25 MB limit)
+          const MAX_AUDIO_BYTES = 12 * 1024 * 1024;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            totalBytes += value.length;
+            if (totalBytes >= MAX_AUDIO_BYTES) {
+              try { await reader.cancel(); } catch (_) {}
+              break;
+            }
           }
-        }
 
-        if (chunks.length > 0 && totalBytes > 1024) {
-          const rawBuffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
-          console.log(`[YouTube Ingest] Successfully extracted ${(rawBuffer.length / (1024 * 1024)).toFixed(2)} MB via ${tier.name} session for "${metadata.title}"`);
-          const { buffer: audioBuffer, filename } = await transcodeToMp3IfPossible(rawBuffer, metadata.videoId);
-          return {
-            audioBuffer,
-            filename,
-            metadata,
-          };
-        }
+          if (chunks.length > 0 && totalBytes > 1024) {
+            const rawBuffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+            return transcodeToMp3IfPossible(rawBuffer, metadata.videoId);
+          }
+          return null;
+        })(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), TIER_TIMEOUT_MS)),
+      ]);
+
+      if (tierResult) {
+        console.log(`[YouTube Ingest] Successfully extracted via ${tier.name} session for "${metadata.title}"`);
+        return { audioBuffer: tierResult.buffer, filename: tierResult.filename, metadata };
       }
+
+      console.warn(`[YouTube Ingest] ${tier.name} returned no data or timed out. Trying next strategy...`);
     } catch (tierErr: any) {
       lastErrorMsg = tierErr.message;
       console.warn(`[YouTube Ingest] ${tier.name} extraction failed: ${tierErr.message}. Trying next strategy...`);
@@ -737,7 +774,7 @@ export async function extractYouTubeAudioStream(
           url,
           videoId: metadata.videoId,
         }),
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(3500),
       });
 
       if (workerRes.ok) {
