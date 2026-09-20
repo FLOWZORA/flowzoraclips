@@ -23,7 +23,11 @@ const app = express();
 app.use(express.json({ limit: '1mb' }));
 
 const PORT = process.env.PORT || 3001;
-const WORKER_SECRET_TOKEN = process.env.WORKER_SECRET_TOKEN || '';
+// Prefer the token scoped to this worker; fall back to the shared one so an
+// existing deployment keeps authenticating after an upgrade. The Vercel side
+// (src/lib/pipeline/youtube.ts) resolves its token in the same order.
+const WORKER_SECRET_TOKEN =
+  process.env.YOUTUBE_WORKER_TOKEN || process.env.WORKER_SECRET_TOKEN || '';
 
 // Max audio size: 20MB cap — covers ~30 minutes of podcast audio
 const MAX_AUDIO_BYTES = 20 * 1024 * 1024;

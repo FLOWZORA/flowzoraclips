@@ -47,7 +47,7 @@ services:
     envVars:
       # Marked `sync: false` so Render prompts for them and never stores
       # secrets in git.
-      - key: WORKER_SECRET_TOKEN
+      - key: YOUTUBE_WORKER_TOKEN
         sync: false
       - key: YOUTUBE_COOKIE
         sync: false

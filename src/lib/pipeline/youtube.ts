@@ -871,7 +871,11 @@ async function _extractYouTubeAudioStreamInner(
   // The audio worker is a separate service and needs its own URL.
   // --------------------------------------------------------------------------
   const workerUrl = process.env.YOUTUBE_WORKER_URL || process.env.YT_WORKER_URL;
-  const workerToken = process.env.WORKER_SECRET_TOKEN;
+  // Prefer a token scoped to THIS worker. WORKER_SECRET_TOKEN is shared with
+  // the ffmpeg render worker (video-exporter.ts), so rotating it would take
+  // video export down too; a dedicated var lets this service hold a strong
+  // secret independently. Falls back to the shared one when unset.
+  const workerToken = process.env.YOUTUBE_WORKER_TOKEN || process.env.WORKER_SECRET_TOKEN;
   if (workerUrl) {
     try {
       console.log(`[YouTube Ingest] Attempting audio extraction via Railway worker: ${workerUrl}...`);
