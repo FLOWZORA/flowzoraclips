@@ -81,6 +81,44 @@ export async function ensurePlatformEvaluator(): Promise<void> {
 // Auto-register evaluator at module load
 ensurePlatformEvaluator().catch(() => {});
 
+let cachedProxyAgent: any = null;
+
+/**
+ * Returns an undici ProxyAgent when YOUTUBE_PROXY_URL or HTTP_PROXY is defined.
+ * Routes all YouTube requests through a residential / mobile IP to bypass AWS datacenter blocks.
+ */
+export async function getProxyAgent(): Promise<any> {
+  const proxyUrl = process.env.YOUTUBE_PROXY_URL || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+  if (!proxyUrl) return null;
+
+  if (!cachedProxyAgent) {
+    try {
+      const { ProxyAgent } = await import('undici');
+      cachedProxyAgent = new ProxyAgent(proxyUrl.trim());
+      console.log(`[YouTube Ingest] Initialized ProxyAgent: ${proxyUrl.split('@').pop()}`);
+    } catch (err: any) {
+      console.warn(`[YouTube Ingest] Failed to initialize ProxyAgent: ${err.message}`);
+    }
+  }
+  return cachedProxyAgent;
+}
+
+/**
+ * Custom fetch wrapper that automatically routes requests through ProxyAgent if configured.
+ */
+export async function customYouTubeFetch(input: any, init?: any): Promise<Response> {
+  const agent = await getProxyAgent();
+  if (agent) {
+    const { fetch: undiciFetch } = await import('undici');
+    // @ts-ignore
+    return undiciFetch(input, {
+      ...init,
+      dispatcher: agent,
+    }) as unknown as Response;
+  }
+  return fetch(input, init);
+}
+
 const innertubeClients: Record<string, Promise<any>> = {};
 
 /**
@@ -105,24 +143,10 @@ export async function getInnertubeClient(type: 'ANDROID' | 'MUSIC' | 'MWEB'): Pr
         deviceCategory = undefined;
       }
 
-      const proxyUrl = process.env.YOUTUBE_PROXY_URL || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+      const agent = await getProxyAgent();
       let customFetch: any = undefined;
-
-      if (proxyUrl) {
-        try {
-          const { ProxyAgent } = await import('undici');
-          const dispatcher = new ProxyAgent(proxyUrl);
-          customFetch = (input: any, init?: any) => {
-            return fetch(input, {
-              ...init,
-              // @ts-ignore
-              dispatcher,
-            });
-          };
-          console.log(`[YouTube Ingest] Configured proxy dispatcher for Innertube: ${proxyUrl.split('@').pop()}`);
-        } catch (proxyErr: any) {
-          console.warn(`[YouTube Ingest] Could not initialize proxy agent: ${proxyErr.message}`);
-        }
+      if (agent) {
+        customFetch = (input: any, init?: any) => customYouTubeFetch(input, init);
       }
 
       const cookie = process.env.YOUTUBE_COOKIE || undefined;
@@ -268,7 +292,7 @@ async function fetchYouTubeSession(): Promise<{ cookieHeader: string; visitorDat
 
   // Strategy 1: YouTube's official visitor_id API endpoint (works 100% reliably from datacenter IPs)
   try {
-    const vRes = await fetch('https://www.youtube.com/youtubei/v1/visitor_id', {
+    const vRes = await customYouTubeFetch('https://www.youtube.com/youtubei/v1/visitor_id', {
       method: 'POST',
       cache: 'no-store',
       headers: {
@@ -309,7 +333,7 @@ async function fetchYouTubeSession(): Promise<{ cookieHeader: string; visitorDat
 
   // Strategy 2: Fallback to scraping youtube.com root HTML
   try {
-    const pageRes = await fetch('https://www.youtube.com/', {
+    const pageRes = await customYouTubeFetch('https://www.youtube.com/', {
       cache: 'no-store',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -367,7 +391,7 @@ async function getMetadataViaVisionOS(videoId: string): Promise<{ title?: string
       racyCheckOk: true,
     };
 
-    const res = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+    const res = await customYouTubeFetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
       method: 'POST',
       cache: 'no-store',
       headers: {
@@ -443,7 +467,7 @@ async function extractViaVisionOS(
       racyCheckOk: true,
     };
 
-    const playerRes = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+    const playerRes = await customYouTubeFetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
       method: 'POST',
       cache: 'no-store',
       headers: {
@@ -477,7 +501,7 @@ async function extractViaVisionOS(
 
     // Cap audio at 18 MB (~25 minutes of speech) to ensure it stays well within Groq's 25MB limit
     const MAX_BYTES = 18 * 1024 * 1024;
-    const audioRes = await fetch(selectedFormat.url, {
+    const audioRes = await customYouTubeFetch(selectedFormat.url, {
       cache: 'no-store',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
