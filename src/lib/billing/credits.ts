@@ -4,6 +4,20 @@ export const IS_COMPLETELY_FREE: boolean = true; // Toggle for 100% free beta pe
 export const MAX_FREE_VIDEO_DURATION_SEC = 600; // 10 minutes default free cap
 export const MAX_PAID_VIDEO_DURATION_SEC = 7200; // 120 minutes (2 hours) max processing cap for podcasts & talk shows
 
+/**
+ * Hard ceiling imposed by the serverless runtime, not by any pricing plan.
+ *
+ * Vercel Hobby caps a function at 60s and the ingest route walls off at 55s.
+ * A measured 23-minute video used the entire budget -- worker extraction ~30s
+ * plus Whisper on 11.6 MB -- and returned in 55.6s, i.e. it passed by
+ * milliseconds and would 504 more often than not in production.
+ *
+ * 10 minutes keeps extraction + transcription + ranking comfortably inside
+ * that wall. Raising it requires a bigger runtime budget (Vercel Pro allows
+ * 300s) or moving the pipeline behind an async job queue.
+ */
+export const MAX_SERVERLESS_DURATION_SEC = 600; // 10 minutes
+
 export interface CreditEligibilityResult {
   allowed: boolean;
   reason?: string;
@@ -22,10 +36,10 @@ export async function validateProcessingEligibility(
 ): Promise<CreditEligibilityResult> {
   // If in 100% free beta mode, allow all users with high duration limits (up to 120 min)
   if (IS_COMPLETELY_FREE) {
-    if (durationSeconds > MAX_PAID_VIDEO_DURATION_SEC) {
+    if (durationSeconds > MAX_SERVERLESS_DURATION_SEC) {
       return {
         allowed: false,
-        reason: `Video length (${Math.round(durationSeconds / 60)} min) exceeds the maximum 120-minute processing limit during free beta.`,
+        reason: `Video length (${Math.round(durationSeconds / 60)} min) exceeds the ${Math.round(MAX_SERVERLESS_DURATION_SEC / 60)}-minute processing limit. Longer videos cannot finish inside the serverless time budget — trim the clip, or upload a shorter section in the "Upload File" tab.`,
         creditsRemaining: 999,
         plan: 'free_beta',
         isFreeTier: true,

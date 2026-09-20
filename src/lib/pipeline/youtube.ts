@@ -3,6 +3,7 @@ import {
   IS_COMPLETELY_FREE,
   MAX_PAID_VIDEO_DURATION_SEC,
   MAX_FREE_VIDEO_DURATION_SEC,
+  MAX_SERVERLESS_DURATION_SEC,
 } from '../billing/credits';
 
 export interface YouTubeVideoMetadata {
@@ -529,8 +530,10 @@ export async function getYouTubeMetadata(url: string, durationSecEstimate: numbe
   }
 
   const formattedDuration = formatDuration(durationSec);
+  // Must mirror validateProcessingEligibility, or the preview says a video is
+  // fine and the POST then rejects it.
   const isEligibleForFreeTier = IS_COMPLETELY_FREE
-    ? durationSec <= MAX_PAID_VIDEO_DURATION_SEC
+    ? durationSec <= MAX_SERVERLESS_DURATION_SEC
     : durationSec <= MAX_FREE_VIDEO_DURATION_SEC;
 
   return {
@@ -797,6 +800,30 @@ async function transcodeToMp3IfPossible(rawBuffer: Buffer, videoId: string): Pro
 }
 
 /**
+ * Identifies an audio container from its magic bytes.
+ *
+ * The worker asks yt-dlp for mp3, but yt-dlp cannot run its ffmpeg
+ * post-processor when writing to stdout, so what actually comes back is the
+ * raw bestaudio container -- usually Opus-in-WebM. Labelling those bytes
+ * ".mp3" matters: Groq rejects uploads whose extension disagrees with the
+ * content (see the extension handling in whisper.ts).
+ */
+function sniffAudioExtension(buf: Buffer): string {
+  if (buf.length >= 4) {
+    if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) return '.webm'; // EBML
+    const head4 = buf.toString('ascii', 0, 4);
+    if (head4 === 'OggS') return '.ogg';
+    if (head4 === 'fLaC') return '.flac';
+    if (head4 === 'RIFF') return '.wav';
+    if (buf.toString('ascii', 0, 3) === 'ID3') return '.mp3';
+    if (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return '.mp3'; // MPEG frame sync
+  }
+  if (buf.length >= 12 && buf.toString('ascii', 4, 8) === 'ftyp') return '.m4a';
+  console.warn('[YouTube Ingest] Could not identify audio container from magic bytes; defaulting to .mp3');
+  return '.mp3';
+}
+
+/**
  * Extracts the audio stream from a YouTube video URL.
  * Multi-tier extraction strategy:
  * 1. Android Mobile Session (InnerTube pure-JS client, zero bot checks, zero login required)
@@ -931,10 +958,11 @@ async function _extractYouTubeAudioStreamInner(
         const arrayBuf = await workerRes.arrayBuffer();
         if (arrayBuf.byteLength > 1024) {
           const audioBuffer = Buffer.from(arrayBuf);
-          console.log(`[YouTube Ingest] ✓ Railway worker extracted ${(audioBuffer.length / (1024 * 1024)).toFixed(2)} MB audio for "${metadata.title}"`);
+          const ext = sniffAudioExtension(audioBuffer);
+          console.log(`[YouTube Ingest] ✓ Worker extracted ${(audioBuffer.length / (1024 * 1024)).toFixed(2)} MB audio (${ext}) for "${metadata.title}"`);
           return {
             audioBuffer,
-            filename: `youtube_${metadata.videoId}.mp3`,
+            filename: `youtube_${metadata.videoId}${ext}`,
             metadata,
           };
         }
