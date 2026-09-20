@@ -919,10 +919,11 @@ async function _extractYouTubeAudioStreamInner(
   // YouTube's datacenter blocklist. yt-dlp handles all JS challenges.
   // Set YOUTUBE_WORKER_URL + WORKER_SECRET_TOKEN env vars to enable.
   //
-  // NOTE: deliberately NOT RAILWAY_WORKER_URL. That variable already points at
-  // the ffmpeg render worker (see video-exporter.ts), which has no
-  // /extract-audio route — reusing it here just yields a 404 on every video.
-  // The audio worker is a separate service and needs its own URL.
+  // NOTE: deliberately its own variable, not the ffmpeg render worker's URL
+  // (see video-exporter.ts). That service does expose its own POST
+  // /extract-audio, but it runs a different yt-dlp invocation without
+  // yt-dlp-ejs, so pointing this at it fails in a way that reads as bot
+  // detection. The audio worker is a separate service with its own cookies.
   // --------------------------------------------------------------------------
   const workerUrl = process.env.YOUTUBE_WORKER_URL || process.env.YT_WORKER_URL;
   // Prefer a token scoped to THIS worker. WORKER_SECRET_TOKEN is shared with

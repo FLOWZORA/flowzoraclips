@@ -63,7 +63,7 @@ export async function isLocalFFmpegAvailable(): Promise<boolean> {
 /**
  * Executes or orchestrates an MP4 export job for a highlight clip.
  * Works across three operational environments:
- * 1. Railway Worker (when RAILWAY_WORKER_URL is configured)
+ * 1. Remote ffmpeg worker (when RENDER_WORKER_URL is configured)
  * 2. Local FFmpeg execution (when ffmpeg binary is in system PATH)
  * 3. In-Memory Direct Video Generator fallback (generates real downloadable MP4 container)
  */
@@ -267,8 +267,18 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
   }
 
 
-  // 3. Check for remote Railway worker
-  const workerUrl = process.env.RAILWAY_WORKER_URL;
+  // 3. Check for the remote ffmpeg render worker.
+  //
+  // Reads RENDER_WORKER_URL, which is the name actually configured in Vercel.
+  // This previously read RAILWAY_WORKER_URL, a name nothing sets, so workerUrl
+  // was always undefined in production and this whole branch was skipped --
+  // export silently fell through to the local/in-memory paths and the worker
+  // was never called. RAILWAY_WORKER_URL is kept as a fallback for any
+  // environment still using the old name.
+  //
+  // Note this is the ffmpeg worker, a different service from the YouTube audio
+  // worker (YOUTUBE_WORKER_URL in youtube.ts). Do not collapse the two.
+  const workerUrl = process.env.RENDER_WORKER_URL || process.env.RAILWAY_WORKER_URL;
   if (workerUrl) {
     try {
       const workerRes = await fetch(`${workerUrl}/render`, {
