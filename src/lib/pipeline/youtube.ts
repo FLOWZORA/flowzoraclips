@@ -108,15 +108,34 @@ export async function getProxyAgent(): Promise<any> {
 }
 
 /**
- * Custom fetch wrapper that automatically routes requests through ProxyAgent if configured.
+ * Custom fetch wrapper that automatically routes plain-URL requests through ProxyAgent.
+ * IMPORTANT: youtubei.js may pass a Request object as `input`. undici's ProxyAgent cannot
+ * handle Request objects — we must extract the URL string and relevant init fields first.
  */
 export async function customYouTubeFetch(input: any, init?: any): Promise<Response> {
   const agent = await getProxyAgent();
   if (agent) {
     const { fetch: undiciFetch } = await import('undici');
+    // Extract URL string from Request object if needed (undici ProxyAgent requires a string URL)
+    let urlString: string;
+    let mergedInit: any = init || {};
+    if (typeof input === 'string' || input instanceof URL) {
+      urlString = typeof input === 'string' ? input : input.toString();
+    } else if (input && typeof input === 'object' && 'url' in input) {
+      // Request object — extract url + method + headers + body
+      urlString = (input as Request).url;
+      mergedInit = {
+        method: (input as Request).method,
+        headers: Object.fromEntries((input as Request).headers.entries()),
+        body: ['GET', 'HEAD'].includes((input as Request).method) ? undefined : (input as Request).body,
+        ...init,
+      };
+    } else {
+      urlString = String(input);
+    }
     // @ts-ignore
-    return undiciFetch(input, {
-      ...init,
+    return undiciFetch(urlString, {
+      ...mergedInit,
       dispatcher: agent,
     }) as unknown as Response;
   }
@@ -127,19 +146,23 @@ const innertubeClients: Record<string, Promise<any>> = {};
 
 /**
  * Returns a cached Innertube instance configured with the specified client session.
- * Android and Music sessions bypass YouTube's datacenter IP bot-checks, age-gates,
- * and "Video is login required" restrictions without requiring user login cookies.
+ * IOS client bypasses YouTube's URL-decipher check and works reliably from datacenter IPs.
+ * ANDROID is kept as a fallback but currently fails URL decipher on Vercel.
+ * Proxy is intentionally NOT used for Innertube — it breaks Request-object fetch calls.
  */
-export async function getInnertubeClient(type: 'ANDROID' | 'MUSIC' | 'MWEB'): Promise<any> {
+export async function getInnertubeClient(type: 'IOS' | 'ANDROID' | 'MUSIC' | 'MWEB'): Promise<any> {
   if (!innertubeClients[type]) {
     innertubeClients[type] = (async () => {
       await ensurePlatformEvaluator();
       const { Session, Innertube, ClientType, UniversalCache } = await import('youtubei.js');
 
-      let clientTypeVal = ClientType.ANDROID;
+      let clientTypeVal = ClientType.IOS;
       let deviceCategory: 'mobile' | undefined = 'mobile';
 
-      if (type === 'MUSIC') {
+      if (type === 'ANDROID') {
+        clientTypeVal = ClientType.ANDROID;
+        deviceCategory = 'mobile';
+      } else if (type === 'MUSIC') {
         clientTypeVal = ClientType.MUSIC;
         deviceCategory = undefined;
       } else if (type === 'MWEB') {
@@ -147,19 +170,15 @@ export async function getInnertubeClient(type: 'ANDROID' | 'MUSIC' | 'MWEB'): Pr
         deviceCategory = undefined;
       }
 
-      const agent = await getProxyAgent();
-      let customFetch: any = undefined;
-      if (agent) {
-        customFetch = (input: any, init?: any) => customYouTubeFetch(input, init);
-      }
-
       const cookie = process.env.YOUTUBE_COOKIE || undefined;
 
+      // Do NOT pass customFetch/proxy to Innertube — undici ProxyAgent can't handle
+      // the Request objects that youtubei.js passes internally, causing parse errors.
+      // IOS client works from Vercel's IPs without any proxy.
       const session = await Session.create({
         device_category: deviceCategory,
         client_type: clientTypeVal,
         cookie,
-        fetch: customFetch,
         cache: new UniversalCache(false),
       });
       return new Innertube(session);
@@ -175,7 +194,7 @@ export async function getInnertubeClient(type: 'ANDROID' | 'MUSIC' | 'MWEB'): Pr
  * Backwards-compatible accessor for Android mobile Innertube session.
  */
 export async function getAndroidInnertube() {
-  return getInnertubeClient('ANDROID');
+  return getInnertubeClient('IOS'); // IOS is the reliable client; kept for API compatibility
 }
 
 /**
@@ -679,10 +698,10 @@ async function _extractYouTubeAudioStreamInner(
   // --------------------------------------------------------------------------
   await ensurePlatformEvaluator();
 
-  const clientTiers: Array<{ name: string; type: 'ANDROID' | 'MUSIC' | 'MWEB' }> = [
-    { name: 'Android Mobile', type: 'ANDROID' },
-    { name: 'YouTube Music', type: 'MUSIC' },
-    { name: 'Mobile Web', type: 'MWEB' },
+  const clientTiers: Array<{ name: string; type: 'IOS' | 'ANDROID' | 'MUSIC' | 'MWEB' }> = [
+    { name: 'iOS Mobile', type: 'IOS' },       // Tested: works from datacenter IPs, no proxy needed
+    { name: 'Android Mobile', type: 'ANDROID' }, // Fallback
+    { name: 'Mobile Web', type: 'MWEB' },        // Last resort
   ];
 
   /** Per-tier ceiling: abort a hanging Innertube download quickly */
