@@ -44,3 +44,5 @@ public/media/exports/*.mp4
 public/media/uploads/*
 !public/media/uploads/.gitkeep
 !public/media/exports/.gitkeep
+
+.vercel

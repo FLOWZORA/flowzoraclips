@@ -20,15 +20,15 @@ const steps: Step[] = [
     id: 'ingest',
     number: '01',
     title: 'Ingestion & Audio Extraction',
-    tagline: 'Direct Cloudflare R2 presigned streaming or YouTube link',
+    tagline: 'Direct Cloudflare R2 presigned streaming',
     badge: 'Lossless Audio Ingest',
     icon: Upload,
     description:
-      'Drop your long-form podcast or video file (MP4, MOV, MP3, WAV) or paste any YouTube URL. Our serverless architecture extracts the pristine audio stream and streams high-bitrate media directly to Cloudflare R2 with zero egress fees.',
+      'Drop your long-form podcast or video file (MP4, MOV, MP3, WAV). Our serverless architecture extracts the pristine audio stream and streams high-bitrate media directly to Cloudflare R2 with zero egress fees.',
     details: [
-      'Accepts YouTube links, podcast recordings, Zoom interviews, and studio cameras',
-      'Select preferred audio language: Hindi, Hinglish (code-switched), English, or Auto-detect',
-      'Choose caption script output: English, Romanized Hindi, or Native Devanagari (देवनागरी)',
+      'Accepts podcast recordings, Zoom interviews, and studio cameras',
+      'English audio language with word-level timestamp precision',
+      'English animated captions burned directly into the exported clip',
     ],
     techPill: 'Cloudflare R2 • Presigned S3 API • yt-dlp Worker',
   },
@@ -36,17 +36,17 @@ const steps: Step[] = [
     id: 'transcribe',
     number: '02',
     title: 'Word-Level Transcription & Diarization',
-    tagline: 'Benchmark-proven bilingual phonetics and filler filtering',
-    badge: 'Hinglish Speech Engine',
+    tagline: 'Benchmark-proven English phonetics and filler filtering',
+    badge: 'English Speech Engine',
     icon: Music,
     description:
-      'The audio is transcribed with millisecond word timestamps and multi-speaker diarization. Colloquial Hindi and English code-switched phrases are preserved without corruption, and speech fillers are automatically indexed for optional trimming.',
+      'The audio is transcribed with millisecond word timestamps and multi-speaker diarization. Speech fillers are automatically indexed for optional trimming to keep clips tight and engaging.',
     details: [
       'Sub-word timestamp synchronization for flawless animated caption alignment',
-      'Bilingual vocabulary models benchmarked against Whisper, Google Chirp, and AssemblyAI',
-      'Automatic flagging of English ("um", "like") and Hindi ("मतलब", "यार", "तो") verbal fillers',
+      'Vocabulary models benchmarked against Whisper, Google Chirp, and AssemblyAI',
+      'Automatic flagging of verbal fillers ("um", "uh", "like") for optional trimming',
     ],
-    techPill: 'Whisper Large v3 • Code-switched WER <8.9% • Word Diarization',
+    techPill: 'Whisper Large v3 • WER <8.9% • Word Diarization',
   },
   {
     id: 'score',
@@ -190,7 +190,7 @@ export default function HowItWorks() {
                   </div>
                   <div className="flex items-center justify-between text-[#A1A1A1]">
                     <span>Language:</span>
-                    <span className="text-[#10B981]">Hindi / Hinglish / Eng</span>
+                    <span className="text-[#10B981]">English</span>
                   </div>
                 </div>
               </div>

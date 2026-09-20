@@ -5,17 +5,17 @@ export default function FaqSection() {
     {
       question: 'How does FLOWZORA Clips work?',
       answer:
-        'You simply paste a YouTube URL or drop a long-form video file (MP4, MOV, MP3, WAV). Our pipeline transcribes audio with word-level timestamps, detects natural semantic sentence boundaries (never naive fixed time slices), scores candidate moments across 4 dimensions (Hook, Coherence, Emotion, Trend) using Google Gemini, and reframes the best moments into 9:16 vertical clips with animated bilingual captions.',
+        'You simply drop a long-form video or audio file (MP4, MOV, MP3, WAV). Our pipeline transcribes audio with word-level timestamps, detects natural semantic sentence boundaries (never naive fixed time slices), scores candidate moments across 4 dimensions (Hook, Coherence, Emotion, Trend) using Google Gemini, and reframes the best moments into 9:16 vertical clips with animated English captions.',
     },
     {
       question: 'What kind of videos are supported?',
       answer:
-        'Podcasts, interview shows, educational talks, webinars, tutorials, commentaries, tech discussions, stand-up comedy, and conversational video formats. We support direct YouTube URLs as well as direct file uploads in MP4, MOV, MP3, and WAV up to 60 minutes long during our free beta.',
+        'Podcasts, interview shows, educational talks, webinars, tutorials, commentaries, tech discussions, stand-up comedy, and conversational video formats. We support direct file uploads in MP4, MOV, MP3, and WAV during our free beta.',
     },
     {
       question: 'What languages are supported?',
       answer:
-        'We specialize deeply in Hindi, code-switched Hinglish (mixed Hindi + English), and English. Our transcription engine is benchmarked against Whisper, Google Cloud Speech (Chirp), and AssemblyAI to preserve colloquial Hindi/Hinglish vocabulary, with bilingual caption rendering in both native Devanagari (देवनागरी) and Romanized Latin scripts.',
+        'We support English-language content including podcasts, interviews, talks, and commentary videos. Our transcription engine is benchmarked against Whisper, Google Cloud Speech (Chirp), and AssemblyAI to deliver accurate English captions with word-level timestamp precision.',
     },
     {
       question: 'Is FLOWZORA Clips free?',
@@ -40,7 +40,7 @@ export default function FaqSection() {
     {
       question: 'Can I import my own footage and B-roll in FLOWZORA Clips?',
       answer:
-        'Yes. You can upload multi-track files, raw studio cuts, or edited timelines directly via Cloudflare R2 presigned uploads or via YouTube. Our scene-change detector respects your visual cutaways and b-roll pacing while keeping active speakers dynamically centered.',
+        'Yes. You can upload multi-track files, raw studio cuts, or edited timelines directly via Cloudflare R2 presigned uploads. Our scene-change detector respects your visual cutaways and b-roll pacing while keeping active speakers dynamically centered.',
     },
     {
       question: 'Why is the scoring model more transparent than other clip tools?',

@@ -24,7 +24,7 @@ export default function Footer() {
             </Link>
 
             <p className="text-xs text-[#A1A1A1] leading-relaxed max-w-sm">
-              Turn long podcasts and video recordings into ranked, ready-to-post 9:16 vertical short clips. Genuine Hindi/Hinglish speech accuracy with transparent 4D highlight scoring powered by Google Gemini.
+              Turn long podcasts and video recordings into ranked, ready-to-post 9:16 vertical short clips. Transparent 4D highlight scoring with animated English captions, powered by Google Gemini.
             </p>
 
             <div className="pt-1 text-[11px] text-[#666666]">
@@ -51,11 +51,6 @@ export default function Footer() {
               <li>
                 <Link href="/#scoring" className="hover:text-white transition-colors">
                   Scoring Engine
-                </Link>
-              </li>
-              <li>
-                <Link href="/#accuracy" className="hover:text-white transition-colors">
-                  Acoustic Benchmark
                 </Link>
               </li>
               <li>

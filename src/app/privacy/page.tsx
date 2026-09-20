@@ -133,7 +133,7 @@ export default function PrivacyPolicyPage() {
                   <h3 className="text-sm font-semibold text-white">A. Information You Provide Directly:</h3>
                   <p className="text-[#A1A1A1] mt-1">
                     - <strong>Creator Account &amp; Authentication:</strong> When accessing creator privileges, we collect your email address to issue secure, passwordless magic links.<br />
-                    - <strong>Uploaded Audio/Video Files:</strong> Direct media uploads (MP4, MOV, MP3, WAV) and submitted YouTube URLs provided for highlight extraction.<br />
+                    - <strong>Uploaded Audio/Video Files:</strong> Direct media uploads (MP4, MOV, MP3, WAV) provided for highlight extraction.<br />
                     - <strong>Support &amp; Communications:</strong> Any inquiries, bug reports, or correspondence sent to our support email addresses.
                   </p>
                 </div>

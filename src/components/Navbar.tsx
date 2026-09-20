@@ -94,9 +94,7 @@ export default function Navbar() {
             <Link href="/#scoring" className="hover:text-white transition-colors">
               Scoring
             </Link>
-            <Link href="/#accuracy" className="hover:text-white transition-colors">
-              Accuracy
-            </Link>
+
             <Link href="/about" className="hover:text-white transition-colors">
               About
             </Link>
@@ -180,13 +178,7 @@ export default function Navbar() {
             >
               Transparent Scoring
             </Link>
-            <Link
-              href="/#accuracy"
-              onClick={() => setMobileMenuOpen(false)}
-              className="flex items-center text-sm font-medium text-[#A1A1A1] hover:text-white hover:bg-[#141414] py-2.5 px-3 rounded-lg transition-colors min-h-[44px]"
-            >
-              Hindi/Hinglish Accuracy
-            </Link>
+
             <Link
               href="/about"
               onClick={() => setMobileMenuOpen(false)}

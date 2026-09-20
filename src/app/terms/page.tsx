@@ -72,7 +72,7 @@ export default function TermsOfServicePage() {
                 </h2>
               </div>
               <p>
-                <strong className="text-white">You Retain 100% Ownership:</strong> You retain complete and unencumbered ownership, copyright, and all intellectual property rights in and to any audio files, video files, transcripts, podcast episodes, or YouTube materials that you submit or upload to the Service (&ldquo;User Content&rdquo;), as well as all resulting video clips, captions, and derived media produced by the Service.
+                <strong className="text-white">You Retain 100% Ownership:</strong> You retain complete and unencumbered ownership, copyright, and all intellectual property rights in and to any audio files, video files, transcripts, or podcast episodes that you submit or upload to the Service (&ldquo;User Content&rdquo;), as well as all resulting video clips, captions, and derived media produced by the Service.
               </p>
               <p>
                 <strong className="text-white">Limited Processing License:</strong> By uploading User Content, you grant FLOWZORA a worldwide, non-exclusive, royalty-free, limited license solely to host, ingest, transcribe, analyze, reframe, score, and encode your media as strictly necessary to operate the Service and provide you with your requested clips. This limited license terminates automatically when you delete your files or account.
