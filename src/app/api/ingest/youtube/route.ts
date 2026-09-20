@@ -12,6 +12,7 @@ import {
   refundCreditOnFailure,
 } from '@/lib/billing/credits';
 import { checkSpendKillSwitch, recordApiSpend } from '@/lib/billing/kill-switch';
+import { inMemoryClips } from '@/lib/pipeline/video-exporter';
 
 // Allow up to 60s runtime for audio streaming, Groq transcription & Gemini highlight ranking
 export const maxDuration = 60;
@@ -123,6 +124,13 @@ export async function POST(req: NextRequest) {
       language: language as SourceLanguage,
       scriptPreference: scriptPreference as ScriptPreference,
     });
+
+    // Cache generated clips so export routes can retrieve word-level timestamps on-demand
+    if (result.rankedResult?.rankedClips) {
+      for (const c of result.rankedResult.rankedClips) {
+        inMemoryClips.set(c.id, c);
+      }
+    }
 
     // 8. Record AI Spend
     const durationMinutes = (result.duration || 60) / 60;

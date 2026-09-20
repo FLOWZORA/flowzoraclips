@@ -14,6 +14,7 @@ import {
   Play,
   Share2,
   Download,
+  Loader2,
   ChevronDown,
   X,
 } from 'lucide-react';
@@ -424,6 +425,57 @@ export default function HeroUploader() {
         return c;
       })
     );
+  };
+
+  const [exportingClipId, setExportingClipId] = useState<string | null>(null);
+
+  const handleExportClip = async (clip: CandidateClip) => {
+    setExportingClipId(clip.id);
+    try {
+      // Automatically export in Instagram Reels / YouTube Shorts aspect ratio (9:16) with burned-in subtitles
+      const exportFormat = '9:16';
+      const res = await fetch('/api/export/render', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clipId: clip.id,
+          startTime: clip.startTime,
+          endTime: clip.endTime,
+          scriptPreference,
+          format: exportFormat,
+          fitMode: 'fit',
+          words: clip.words || [],
+          transcriptSnippet: clip.transcriptSnippet || '',
+          sourceVideoUrl: sourceMediaUrl || '',
+          sourceVideoKey: sourceVideoKey || '',
+        }),
+      });
+
+      const json = await res.json();
+      if (json.success && json.export?.downloadUrl) {
+        const a = document.createElement('a');
+        a.href = json.export.downloadUrl;
+        a.download = `flowzora_${clip.id}_reels_shorts_9x16.mp4`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        // Fallback to direct GET stream
+        const fallbackUrl = `/api/export/render?clipId=${clip.id}&download=true&format=9:16&startTime=${clip.startTime}&endTime=${clip.endTime}&sourceVideoUrl=${encodeURIComponent(sourceMediaUrl || '')}${sourceVideoKey ? `&sourceVideoKey=${encodeURIComponent(sourceVideoKey)}` : ''}&fitMode=fit`;
+        const a = document.createElement('a');
+        a.href = fallbackUrl;
+        a.download = `flowzora_${clip.id}_reels_shorts_9x16.mp4`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    } catch (err) {
+      console.error('Export download failed:', err);
+      const fallbackUrl = `/api/export/render?clipId=${clip.id}&download=true&format=9:16&startTime=${clip.startTime}&endTime=${clip.endTime}&sourceVideoUrl=${encodeURIComponent(sourceMediaUrl || '')}${sourceVideoKey ? `&sourceVideoKey=${encodeURIComponent(sourceVideoKey)}` : ''}&fitMode=fit`;
+      window.location.href = fallbackUrl;
+    } finally {
+      setExportingClipId(null);
+    }
   };
 
   return (
@@ -956,15 +1008,25 @@ export default function HeroUploader() {
                             <Sparkles className="h-3.5 w-3.5 text-[#10B981]" />
                             <span className="hidden xs:inline">Social</span>
                           </button>
-                          <a
-                            href={`/api/export/render?clipId=${clip.id}&download=true&format=${aspectRatio}&startTime=${clip.startTime}&endTime=${clip.endTime}&sourceVideoUrl=${encodeURIComponent(sourceMediaUrl || '')}${sourceVideoKey ? `&sourceVideoKey=${encodeURIComponent(sourceVideoKey)}` : ''}&fitMode=fit`}
-                            download={`flowzora_${clip.id}_${aspectRatio.replace(':', 'x')}.mp4`}
-                            className="flex items-center justify-center gap-1 rounded-md border border-[#262626] bg-[#111111] px-3 py-2 text-xs font-medium text-[#EDEDED] hover:border-[#383838] transition-colors min-h-[38px]"
-                            title={`Download ${aspectRatio} MP4`}
+                          <button
+                            type="button"
+                            onClick={() => handleExportClip(clip)}
+                            disabled={exportingClipId === clip.id}
+                            className="flex items-center justify-center gap-1.5 rounded-md border border-[#262626] bg-[#111111] px-3 py-2 text-xs font-semibold text-[#EDEDED] hover:border-[#10B981] hover:text-[#10B981] transition-colors min-h-[38px] cursor-pointer disabled:opacity-60"
+                            title="Download 9:16 vertical MP4 (Reels & Shorts with Subtitles)"
                           >
-                            <Download className="h-3.5 w-3.5" />
-                            <span className="hidden xs:inline">Export</span>
-                          </a>
+                            {exportingClipId === clip.id ? (
+                              <>
+                                <Loader2 className="h-3.5 w-3.5 animate-spin text-[#10B981]" />
+                                <span className="text-[11px] text-[#10B981]">Exporting...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Download className="h-3.5 w-3.5 text-[#10B981]" />
+                                <span className="hidden xs:inline">Reels/Shorts</span>
+                              </>
+                            )}
+                          </button>
                         </div>
                       </div>
                     </div>

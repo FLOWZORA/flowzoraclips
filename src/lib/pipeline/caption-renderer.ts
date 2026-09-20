@@ -105,18 +105,20 @@ export function generateAssSubtitles(
 ): string {
   const {
     scriptPreference,
-    fontSize = 54,
+    fontSize = 58,
     highlightColorHex = '#10B981',
     textColorHex = '#FFFFFF',
     outlineColorHex = '#0A0B10',
     videoWidth = 1080,
     videoHeight = 1920,
-    marginV = 280, // Positioned safely above Reels/Shorts bottom controls
+    marginV = videoHeight >= 1920 ? 360 : 180, // Positioned safely in lower third, above Reels/Shorts bottom controls
   } = config;
 
-  const fontName = scriptPreference === 'devanagari' ? 'Noto Sans Devanagari' : 'Outfit';
-  const primaryAssColor = hexToAssColor(textColorHex);
-  const secondaryAssColor = hexToAssColor(highlightColorHex);
+  // On Windows DirectWrite & Linux Fontconfig, Nirmala UI / Arial guarantees zero missing glyphs for Latin & Devanagari
+  const fontName = scriptPreference === 'devanagari' ? 'Nirmala UI' : 'Arial';
+  // In ASS Karaoke (\k), characters start in SecondaryColour and transition to PrimaryColour as they are spoken
+  const primaryAssColor = hexToAssColor(highlightColorHex); // Active word highlight (Emerald Green)
+  const secondaryAssColor = hexToAssColor(textColorHex);     // Base text color (Crisp White)
   const outlineAssColor = hexToAssColor(outlineColorHex);
 
   const lines = chunkWordsIntoCaptionLines(words, 4);
@@ -144,7 +146,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     // Build karaoke animation string using {\k<duration_cs>} tags
     const karaokeTokens = line.words
-      .map((w) => `{\\k${w.durationCs}}${w.word}`)
+      .map((w: any) => {
+        const text = scriptPreference === 'devanagari' && w.devanagari ? w.devanagari : w.word;
+        return `{\\k${w.durationCs}}${text}`;
+      })
       .join(' ');
 
     assContent += `Dialogue: 0,${startStr},${endStr},Default,,0,0,0,,${karaokeTokens}\n`;

@@ -5,6 +5,7 @@ import { validateProcessingEligibility, deductCredit, refundCreditOnFailure } fr
 import { checkSpendKillSwitch, recordApiSpend } from '@/lib/billing/kill-switch';
 import { extractAudioBuffer, isVideoFile } from '@/lib/pipeline/audio-extractor';
 import { inMemoryR2, getBufferFromR2 } from '@/lib/storage/r2';
+import { inMemoryClips } from '@/lib/pipeline/video-exporter';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -190,6 +191,13 @@ export async function POST(req: NextRequest) {
       language,
       scriptPreference,
     });
+
+    // Cache generated clips so export routes can retrieve word-level timestamps on-demand
+    if (result.rankedResult?.rankedClips) {
+      for (const c of result.rankedResult.rankedClips) {
+        inMemoryClips.set(c.id, c);
+      }
+    }
 
     // 7. Record actual accrued AI cost to spend ledger
     // Groq Whisper Large v3 is 100% free ($0.00/min); OpenAI Whisper is $0.006/min

@@ -13,6 +13,11 @@ import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
+import { WordTimestamp } from './types';
+
+// Global cache for candidate clips so exports can retrieve words & timestamps on-demand
+export const inMemoryClips = new Map<string, CandidateClip>();
+
 export interface ExportRenderOptions {
   clipId: string;
   startTime: number;
@@ -25,6 +30,8 @@ export interface ExportRenderOptions {
   fitMode?: 'fit' | 'crop';
   burnedInCaptions?: boolean;
   userId?: string;
+  words?: WordTimestamp[];
+  transcriptSnippet?: string;
 }
 
 export interface ExportRenderResult {
@@ -70,6 +77,7 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
     scriptPreference = 'romanized',
     format = '9:16',
     userId = 'demo-user-1',
+    burnedInCaptions = true,
   } = options;
 
   const durationSec = Number(Math.min(35, endTime - startTime).toFixed(1));
@@ -78,15 +86,80 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
   const fileKey = `exports/${userId}/${jobId}_${format.replace(':', 'x')}.mp4`;
   const outputFilename = `flowzora_${clipId}_${Math.round(startTime)}s-${Math.round(endTime)}s_${format.replace(':', 'x')}.mp4`;
 
-  // 1. Build candidate clip structure
-  const mockClip: CandidateClip = {
+  // 1. Resolve words and transcript snippet for subtitle burning
+  const cachedClip = inMemoryClips.get(clipId);
+  const snippet = options.transcriptSnippet || cachedClip?.transcriptSnippet || 'FLOWZORA Highlights';
+  const rawWords = (options.words && options.words.length > 0)
+    ? options.words
+    : (cachedClip?.words && cachedClip.words.length > 0 ? cachedClip.words : []);
+
+  let effectiveWords: WordTimestamp[] = [];
+  if (rawWords.length > 0) {
+    const firstStart = Number(rawWords[0]?.start ?? 0);
+    const isAbsolute = startTime > 0.5 && (firstStart >= startTime - 3.0 || firstStart > durationSec);
+    const offset = isAbsolute ? startTime : 0;
+    effectiveWords = rawWords
+      .map((w) => ({
+        word: w.word,
+        start: Math.max(0, Number((Number(w.start ?? 0) - offset).toFixed(2))),
+        end: Math.max(0.1, Number((Number(w.end ?? (Number(w.start ?? 0) + 0.3)) - offset).toFixed(2))),
+        devanagari: w.devanagari,
+      }))
+      .filter((w) => w.start <= durationSec + 1);
+  }
+
+  // If words are missing or empty, synthesize evenly spaced words from transcriptSnippet
+  if (effectiveWords.length === 0 && snippet) {
+    const parts = snippet.split(/\s+/).filter(Boolean);
+    if (parts.length > 0) {
+      const step = durationSec / parts.length;
+      effectiveWords = parts.map((part, i) => ({
+        word: part,
+        start: Number((i * step).toFixed(2)),
+        end: Number(((i + 0.9) * step).toFixed(2)),
+        devanagari: part,
+      }));
+    }
+  }
+
+  // Generate ASS Subtitles file
+  let assFilePath: string | null = null;
+  let escapedAssPath: string | null = null;
+  if (burnedInCaptions && effectiveWords.length > 0) {
+    try {
+      const isVertical = format === '9:16';
+      const isSquare = format === '1:1';
+      const targetW = isVertical ? 1080 : isSquare ? 1080 : 1920;
+      const targetH = isVertical ? 1920 : isSquare ? 1080 : 1080;
+      const assContent = generateAssSubtitles(effectiveWords, {
+        scriptPreference,
+        videoWidth: targetW,
+        videoHeight: targetH,
+        fontSize: isVertical ? 58 : 46,
+        highlightColorHex: '#10B981', // Flowzora active emerald green
+        textColorHex: '#FFFFFF',      // Base crisp white
+        outlineColorHex: '#0A0B10',   // Deep dark outline
+        marginV: isVertical ? 360 : 160, // Safely above Reels/Shorts bottom controls
+      });
+
+      assFilePath = path.join(os.tmpdir(), `flowzora_${clipId}_${Date.now()}.ass`);
+      fs.writeFileSync(assFilePath, assContent, 'utf-8');
+      // Escape for FFmpeg on Windows: C\:/path/to/sub.ass
+      escapedAssPath = assFilePath.replace(/\\/g, '/').replace(':', '\\:');
+    } catch (assErr) {
+      console.warn('[Video Exporter] Failed to generate ASS subtitles:', assErr);
+    }
+  }
+
+  // Build candidate clip structure
+  const candidateClip: CandidateClip = {
     id: clipId,
     videoId: 'video-source',
     rank: 1,
     startTime,
     endTime,
     duration: durationSec,
-    transcriptSnippet: 'FLOWZORA Clips High Impact Segment',
+    transcriptSnippet: snippet,
     aspectRatio: (format as AspectRatio) || '9:16',
     reframeFallbackUsed: false,
     score: {
@@ -99,13 +172,10 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
       },
       reasoning: 'Highlight export',
     },
-    words: [
-      { word: 'FLOWZORA', start: startTime, end: startTime + 0.8 },
-      { word: 'Clips', start: startTime + 0.8, end: startTime + 1.5 },
-    ],
+    words: effectiveWords,
   };
 
-  // 2. Build standardized rendering job specification
+  // Standardized rendering job specification
   const jobSpec: RenderJobSpecification = buildVideoRenderJob(
     {
       clipId,
@@ -114,10 +184,10 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
       endTime,
       aspectRatio: format as AspectRatio,
       scriptPreference,
-      burnCaptions: true,
+      burnCaptions: burnedInCaptions,
       trimFillers: false,
     },
-    mockClip
+    candidateClip
   );
 
   // Resolve input video source strictly from genuine user-uploaded buffers and caches
@@ -252,28 +322,34 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
 
       const fitMode = options.fitMode || 'fit';
 
-      // Aspect ratio crop/scale filters:
-      // 9:16 (1080x1920 vertical), 1:1 (1080x1080 square), 16:9 (1920x1080 landscape)
-      let filter = 'scale=1920:1080';
+      // Aspect ratio crop/scale filters with exact setsar=1 and burned-in ASS subtitles:
+      // 9:16 (1080x1920 vertical for Reels / Shorts / TikTok)
+      // 1:1 (1080x1080 square for Instagram Feed)
+      // 16:9 (1920x1080 landscape for YouTube)
+      const subFilter = escapedAssPath ? `,ass='${escapedAssPath}'` : '';
+      let filter = `scale=1920:1080,setsar=1${subFilter}`;
       let isComplexFilter = false;
 
       if (format === '9:16') {
         if (fitMode === 'crop') {
-          filter = 'crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920';
+          filter = `crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920,setsar=1${subFilter}`;
+          isComplexFilter = false;
         } else {
-          // Studio-grade ambient blur background + fully visible centered 1080p foreground
-          filter = 'split[v1][v2];[v1]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:5[bg];[v2]scale=1080:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2';
+          // Studio-grade ambient blur background + centered sharp foreground + setsar=1 + subtitles
+          filter = `split[v1][v2];[v1]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:5[bg];[v2]scale=1080:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1${subFilter}`;
           isComplexFilter = true;
         }
       } else if (format === '1:1') {
         if (fitMode === 'crop') {
-          filter = 'crop=ih:ih:(iw-ih)/2:0,scale=1080:1080';
+          filter = `crop=ih:ih:(iw-ih)/2:0,scale=1080:1080,setsar=1${subFilter}`;
+          isComplexFilter = false;
         } else {
-          filter = 'split[v1][v2];[v1]scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080,boxblur=20:5[bg];[v2]scale=1080:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2';
+          filter = `split[v1][v2];[v1]scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080,boxblur=20:5[bg];[v2]scale=1080:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1${subFilter}`;
           isComplexFilter = true;
         }
       } else {
-        filter = 'scale=1920:1080';
+        filter = `scale=1920:1080,setsar=1${subFilter}`;
+        isComplexFilter = false;
       }
 
       const args = [
@@ -282,6 +358,7 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
         '-to', String(safeEndTime),
         '-i', resolvedInputPath,
         isComplexFilter ? '-filter_complex' : '-vf', filter,
+        '-pix_fmt', 'yuv420p',
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
         '-crf', '22',
@@ -314,6 +391,10 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
       };
     } catch (localErr) {
       console.warn('[Video Exporter] Local FFmpeg render failed, using reliable genuine MP4 fallback:', localErr);
+    } finally {
+      if (assFilePath && fs.existsSync(assFilePath)) {
+        try { fs.unlinkSync(assFilePath); } catch (_) {}
+      }
     }
   }
 
@@ -343,3 +424,4 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
     ffmpegCommand: jobSpec.command,
   };
 }
+

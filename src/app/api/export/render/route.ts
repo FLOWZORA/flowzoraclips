@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { exportClipToMp4 } from '@/lib/pipeline/video-exporter';
+import { exportClipToMp4, inMemoryClips } from '@/lib/pipeline/video-exporter';
 import { inMemoryR2 } from '@/lib/storage/r2';
 import path from 'path';
 import os from 'os';
@@ -12,13 +12,26 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const clipId = searchParams.get('clipId') || 'clip-highlight';
+    // Automatically default to '9:16' vertical format (Instagram Reels / YouTube Shorts)
     const format = (searchParams.get('format') || '9:16') as '9:16' | '1:1' | '16:9';
     const fitMode = (searchParams.get('fitMode') || 'fit') as 'fit' | 'crop';
     const isDownload = searchParams.get('download') === 'true';
-    const startTime = Number(searchParams.get('startTime') || 0);
-    const endTime = Number(searchParams.get('endTime') || 25);
+    const scriptPreference = (searchParams.get('scriptPreference') || 'romanized') as any;
+    let startTime = Number(searchParams.get('startTime') || 0);
+    let endTime = Number(searchParams.get('endTime') || 25);
     const sourceVideoUrl = searchParams.get('sourceVideoUrl') || '';
     const sourceVideoKey = searchParams.get('sourceVideoKey') || '';
+
+    // Retrieve cached clip info if available
+    const cachedClip = inMemoryClips.get(clipId);
+    if (cachedClip) {
+      if (!searchParams.get('startTime') && cachedClip.startTime !== undefined) {
+        startTime = cachedClip.startTime;
+      }
+      if (!searchParams.get('endTime') && cachedClip.endTime !== undefined) {
+        endTime = cachedClip.endTime;
+      }
+    }
 
     // Include startTime and endTime so each clip and nudge variation has a unique filename and never serves stale clips
     const filename = `flowzora_${clipId}_${Math.round(startTime)}s-${Math.round(endTime)}s_${format.replace(':', 'x')}.mp4`;
@@ -55,7 +68,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 3. If not rendered yet, render it on demand using the genuine source video
+    // 3. If not rendered yet, render it on demand using the genuine source video with burned-in subtitles
     if (!fileBuffer) {
       await exportClipToMp4({
         clipId,
@@ -63,6 +76,9 @@ export async function GET(req: NextRequest) {
         endTime,
         format,
         fitMode,
+        scriptPreference,
+        words: cachedClip?.words,
+        transcriptSnippet: cachedClip?.transcriptSnippet,
         sourceVideoUrl,
         sourceVideoKey,
       });
@@ -144,11 +160,13 @@ export async function POST(req: NextRequest) {
       startTime = 0,
       endTime = 30,
       scriptPreference = 'romanized',
-      format = '9:16',
+      format = '9:16', // Instagram Reels & YouTube Shorts automatic default
       fitMode = 'fit',
       userId = 'demo-user-1',
       sourceVideoUrl = '',
       sourceVideoKey = '',
+      words,
+      transcriptSnippet,
     } = body;
 
     if (!clipId) {
@@ -168,6 +186,8 @@ export async function POST(req: NextRequest) {
       userId,
       sourceVideoUrl,
       sourceVideoKey,
+      words,
+      transcriptSnippet,
     });
 
     return NextResponse.json({

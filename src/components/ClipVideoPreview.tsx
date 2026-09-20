@@ -959,6 +959,7 @@ export default function ClipVideoPreview({
   const handleExportDownload = async () => {
     setIsExporting(true);
     try {
+      const exportFormat = aspectRatio || activePlatform.ratio || '9:16';
       const res = await fetch('/api/export/render', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -967,8 +968,10 @@ export default function ClipVideoPreview({
           startTime: clip.startTime,
           endTime: clip.endTime,
           scriptPreference,
-          format: aspectRatio,
+          format: exportFormat,
           fitMode: framingMode,
+          words: clip.words || [],
+          transcriptSnippet: clip.transcriptSnippet || '',
           sourceVideoUrl: sourceMediaUrl || '',
           sourceVideoKey: sourceVideoKey || '',
         }),
