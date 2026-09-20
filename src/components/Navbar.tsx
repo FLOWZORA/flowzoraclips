@@ -81,7 +81,7 @@ export default function Navbar() {
             </div>
             <div className="flex items-center">
               <span className="font-semibold text-base tracking-tight text-white font-sans">
-                flowzora<span className="text-[#A1A1A1] font-normal">clips</span>
+                flowzoraclips
               </span>
             </div>
           </Link>

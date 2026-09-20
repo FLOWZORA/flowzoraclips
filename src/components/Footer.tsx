@@ -19,7 +19,7 @@ export default function Footer() {
                 </svg>
               </div>
               <span className="font-semibold text-sm text-white font-sans">
-                flowzora<span className="text-[#A1A1A1] font-normal">clips</span>
+                flowzoraclips
               </span>
             </Link>
 
