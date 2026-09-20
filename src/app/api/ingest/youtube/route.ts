@@ -166,6 +166,9 @@ export async function POST(req: NextRequest) {
       success: true,
       metadata,
       data: result,
+      // Top-level so a caller cannot miss it: false means clips were ranked by
+      // the offline heuristic, not the AI model.
+      scoring: result.scoring,
       billing: {
         creditsRemaining: balanceAfterDeduct,
         jobId: videoJobId,

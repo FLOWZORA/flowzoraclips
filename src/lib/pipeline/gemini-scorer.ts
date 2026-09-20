@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { CandidateScore, ScoreDimensions } from './types';
+import { CandidateScore, ScoreDimensions, ScoringFallbackReason, ScoringReport } from './types';
 import { CandidateWindow } from './candidate-generator';
 
 const SCORING_SYSTEM_INSTRUCTION = `You are an elite short-form video editor and algorithmic viral strategist specializing in Hindi, Hinglish, and English creator content (YouTube Shorts, Instagram Reels, TikTok).
@@ -32,6 +32,8 @@ export async function scoreCandidateWithGemini(
   contextLanguage: string = 'hinglish'
 ): Promise<CandidateScore> {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  // Defaults to no_api_key; overwritten if a call is attempted and fails.
+  let fallbackReason: ScoringFallbackReason = 'no_api_key';
 
   if (apiKey) {
     try {
@@ -90,15 +92,67 @@ Evaluate this candidate and respond with structured JSON.`;
           dimensions,
           compositeScore,
           reasoning: parsed.reasoning || 'Strong contextual engagement and topic alignment.',
+          scoringEngine: 'gemini',
         };
       }
-    } catch (err) {
-      console.warn('Gemini live scoring failed, falling back to heuristic scoring:', err);
+      fallbackReason = 'empty_response';
+    } catch (err: any) {
+      // Classify so callers can distinguish "out of quota" (recoverable, and the
+      // operator's to fix) from a genuine API fault.
+      fallbackReason = classifyScoringError(err);
+      console.warn(`Gemini live scoring failed (${fallbackReason}), falling back to heuristic scoring:`, err);
     }
   }
 
-  // Deterministic heuristic scoring fallback when offline or without API key
-  return calculateHeuristicScore(candidate);
+  // Deterministic heuristic scoring fallback when offline or without API key.
+  // Tagged so a degraded run is never mistaken for a real AI ranking.
+  return { ...calculateHeuristicScore(candidate), fallbackReason };
+}
+
+/** Maps an SDK error onto a stable reason code. */
+function classifyScoringError(err: any): ScoringFallbackReason {
+  const status = err?.status ?? err?.error?.code ?? err?.code;
+  const text = `${err?.message ?? ''} ${JSON.stringify(err?.error ?? '')}`;
+  if (status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(text)) return 'quota_exceeded';
+  return 'api_error';
+}
+
+/** Aggregates per-clip engines into one report for the API response. */
+export function buildScoringReport(scores: Iterable<CandidateScore>): ScoringReport {
+  let geminiScored = 0;
+  let heuristicScored = 0;
+  let fallbackReason: ScoringFallbackReason | undefined;
+
+  for (const s of scores) {
+    if (s.scoringEngine === 'gemini') geminiScored++;
+    else {
+      heuristicScored++;
+      fallbackReason = fallbackReason ?? s.fallbackReason;
+    }
+  }
+
+  const degraded = heuristicScored > 0;
+  const engine = degraded ? (geminiScored > 0 ? 'mixed' : 'heuristic') : 'gemini';
+
+  const MESSAGES: Record<ScoringFallbackReason, string> = {
+    quota_exceeded:
+      'Gemini daily quota exhausted — clips were ranked by the offline heuristic, not the AI model. Quota resets at midnight Pacific.',
+    no_api_key:
+      'No Gemini API key configured — clips were ranked by the offline heuristic, not the AI model.',
+    api_error:
+      'Gemini API call failed — clips were ranked by the offline heuristic, not the AI model.',
+    empty_response:
+      'Gemini returned an empty response — clips were ranked by the offline heuristic, not the AI model.',
+  };
+
+  return {
+    engine,
+    degraded,
+    geminiScored,
+    heuristicScored,
+    fallbackReason,
+    message: degraded && fallbackReason ? MESSAGES[fallbackReason] : undefined,
+  };
 }
 
 /**
@@ -192,5 +246,6 @@ function calculateHeuristicScore(candidate: CandidateWindow): CandidateScore {
     dimensions,
     compositeScore,
     reasoning,
+    scoringEngine: 'heuristic',
   };
 }

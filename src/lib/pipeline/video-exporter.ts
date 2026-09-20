@@ -163,6 +163,8 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
     aspectRatio: (format as AspectRatio) || '9:16',
     reframeFallbackUsed: false,
     score: {
+      // Hardcoded placeholder, not a model output.
+      scoringEngine: 'heuristic' as const,
       compositeScore: 92,
       dimensions: {
         hookStrength: 9.5,

@@ -43,6 +43,9 @@ export function dedupeAndRankCandidates(
       dimensions: { hookStrength: 5, standaloneCoherence: 5, emotionalPayoff: 5, topicTrendAlignment: 5 },
       compositeScore: 50,
       reasoning: 'Standard candidate segment',
+      // No score was produced for this candidate at all, so it is certainly
+      // not an AI ranking.
+      scoringEngine: 'heuristic' as const,
     },
   }));
 

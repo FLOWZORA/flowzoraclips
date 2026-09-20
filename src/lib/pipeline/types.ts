@@ -38,10 +38,28 @@ export interface ScoreDimensions {
   topicTrendAlignment: number; // 0 to 10
 }
 
+/** How a score was actually produced. */
+export type ScoringEngine = 'gemini' | 'heuristic';
+
+/** Why Gemini scoring was skipped, when it was. */
+export type ScoringFallbackReason = 'no_api_key' | 'quota_exceeded' | 'api_error' | 'empty_response';
+
 export interface CandidateScore {
   dimensions: ScoreDimensions;
   compositeScore: number;      // Calculated weighted score (0-100)
   reasoning: string;           // Transparent 1-line explanation of why this clip works
+  scoringEngine: ScoringEngine;          // 'heuristic' means the AI ranking did NOT run
+  fallbackReason?: ScoringFallbackReason; // present only when scoringEngine is 'heuristic'
+}
+
+/** Pipeline-level summary of whether AI ranking actually ran. */
+export interface ScoringReport {
+  engine: ScoringEngine | 'mixed';
+  degraded: boolean;              // true when any clip fell back to heuristics
+  geminiScored: number;
+  heuristicScored: number;
+  fallbackReason?: ScoringFallbackReason;
+  message?: string;               // human-readable, safe to surface in a UI
 }
 
 export interface CandidateClip {

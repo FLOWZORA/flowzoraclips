@@ -1,8 +1,8 @@
-import { SourceLanguage, ScriptPreference } from './types';
+import { SourceLanguage, ScriptPreference, ScoringReport } from './types';
 import { transcribeAudio, WhisperTranscriptionResult } from './whisper';
 import { detectAndAnnotateFillers, FillerDetectionReport } from './filler-detect';
 import { generateCandidateSegments, CandidateWindow } from './candidate-generator';
-import { scoreCandidatesBatch } from './gemini-scorer';
+import { scoreCandidatesBatch, buildScoringReport } from './gemini-scorer';
 import { dedupeAndRankCandidates, RankedClipResult } from './ranker';
 
 export interface PipelineExecutionOptions {
@@ -22,6 +22,8 @@ export interface PipelineExecutionResult {
   fillerReport: FillerDetectionReport;
   candidatesGenerated: number;
   rankedResult: RankedClipResult;
+  /** Whether AI ranking actually ran, or silently fell back to heuristics. */
+  scoring: ScoringReport;
 }
 
 /**
@@ -60,6 +62,14 @@ export async function runTextPipeline(
   console.log(`[FLOWZORA Pipeline] Scoring candidates across 4 dimensions via Gemini API...`);
   const scoreMap = await scoreCandidatesBatch(candidates, language);
 
+  // A quota exhaustion silently degrades every clip to heuristic scoring, which
+  // looks like a working ranking (identical composite scores, boilerplate
+  // reasoning). Surface it so callers can tell a real ranking from a fallback.
+  const scoring = buildScoringReport(scoreMap.values());
+  if (scoring.degraded) {
+    console.warn(`[FLOWZORA Pipeline] DEGRADED RANKING: ${scoring.message} (${scoring.heuristicScored}/${scoring.geminiScored + scoring.heuristicScored} clips)`);
+  }
+
   // Stage 5: Overlap Deduplication & Quality-Driven Ranking
   const rankedResult = dedupeAndRankCandidates(
     candidates,
@@ -77,5 +87,6 @@ export async function runTextPipeline(
     fillerReport,
     candidatesGenerated: candidates.length,
     rankedResult,
+    scoring,
   };
 }
