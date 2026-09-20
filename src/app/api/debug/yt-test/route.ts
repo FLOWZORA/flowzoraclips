@@ -9,6 +9,7 @@ export const maxDuration = 30;
  * GET /api/debug/yt-test?v=VIDEO_ID
  */
 export async function GET(req: NextRequest) {
+  const videoId = req.nextUrl.searchParams.get('v') || 'QGLvwQX-Aos'; // default: Druski / Theo Von #489
   const detectedEnvKey =
     process.env.YOUTUBE_COOKIE ? 'YOUTUBE_COOKIE' :
     process.env.YOUTUBE_COOKIES ? 'YOUTUBE_COOKIES' :
