@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { normalizeYouTubeCookie } from '@/lib/pipeline/youtube';
+import { normalizeYouTubeCookie, fetchYouTubeGuestSession } from '@/lib/pipeline/youtube';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -24,6 +24,18 @@ export async function GET(req: NextRequest) {
     '';
   const normalizedCookie = normalizeYouTubeCookie(rawCookie);
 
+  const poToken = process.env.YOUTUBE_PO_TOKEN || process.env.YT_PO_TOKEN || undefined;
+
+  let guestVisitorData: string | undefined = undefined;
+  let guestCookieHeader: string | undefined = undefined;
+  try {
+    const guest = await fetchYouTubeGuestSession();
+    guestVisitorData = guest.visitorData;
+    guestCookieHeader = guest.cookieHeader;
+  } catch (guestErr: any) {
+    console.warn('[yt-test] fetchYouTubeGuestSession error:', guestErr.message);
+  }
+
   const results: Record<string, any> = {
     videoId,
     timestamp: new Date().toISOString(),
@@ -38,6 +50,13 @@ export async function GET(req: NextRequest) {
       isNetscapeFormat: rawCookie.includes('# Netscape') || rawCookie.includes('\t'),
       isJsonFormat: rawCookie.trim().startsWith('['),
       cookieSample: normalizedCookie ? normalizedCookie.slice(0, 40) + '...' : 'none',
+    },
+    guestSessionDiagnostics: {
+      hasVisitorData: !!guestVisitorData,
+      visitorDataLength: guestVisitorData?.length || 0,
+      visitorDataSample: guestVisitorData ? guestVisitorData.slice(0, 30) + '...' : 'none',
+      hasConsentCookie: !!guestCookieHeader,
+      poTokenConfigured: !!poToken,
     },
     clientTests: {},
     overallSuccess: false,
@@ -58,6 +77,8 @@ export async function GET(req: NextRequest) {
       const mwebSession = await Session.create({
         client_type: ClientType.MWEB,
         cookie: normalizedCookie || undefined,
+        visitor_data: guestVisitorData,
+        po_token: poToken,
         cache: new UniversalCache(false),
       });
       const ytMweb = new Innertube(mwebSession);
@@ -87,6 +108,8 @@ export async function GET(req: NextRequest) {
         client_type: ClientType.ANDROID,
         device_category: 'mobile',
         cookie: normalizedCookie || undefined,
+        visitor_data: guestVisitorData,
+        po_token: poToken,
         cache: new UniversalCache(false),
       });
       const ytAndroid = new Innertube(androidSession);
@@ -115,6 +138,8 @@ export async function GET(req: NextRequest) {
       const webSession = await Session.create({
         client_type: ClientType.WEB,
         cookie: normalizedCookie || undefined,
+        visitor_data: guestVisitorData,
+        po_token: poToken,
         cache: new UniversalCache(false),
       });
       const ytWeb = new Innertube(webSession);

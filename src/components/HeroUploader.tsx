@@ -608,11 +608,43 @@ export default function HeroUploader() {
         {/* Input Body */}
         <div className="mt-6">
           {activeTab === 'upload' ? (
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDragging(true);
-              }}
+            <div>
+              {/* Context retention from YouTube tab */}
+              {youtubeMetadata && !selectedFile && (
+                <div className="mb-4 rounded-lg border border-[#333333] bg-[#111111] p-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <img
+                      src={youtubeMetadata.thumbnailUrl}
+                      alt=""
+                      className="w-12 h-8 object-cover rounded border border-[#262626] shrink-0"
+                    />
+                    <div className="min-w-0 text-left">
+                      <p className="text-xs font-semibold text-white truncate">{youtubeMetadata.title}</p>
+                      <p className="text-[11px] text-[#A1A1A1]">
+                        Pre-linked YouTube video ({youtubeMetadata.formattedDuration}). Drop the downloaded file below to generate clips.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setYoutubeMetadata(null);
+                      setYoutubeUrl('');
+                    }}
+                    className="text-[#666666] hover:text-white p-1 shrink-0 cursor-pointer"
+                    title="Clear pre-linked video"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={(e) => {
                 e.preventDefault();
@@ -697,6 +729,7 @@ export default function HeroUploader() {
                 </div>
               )}
             </div>
+          </div>
           ) : (
             <div className="space-y-4">
               <div className="rounded-xl border border-[#262626] bg-[#050505] p-4 flex flex-col sm:flex-row items-center gap-3">
@@ -769,7 +802,7 @@ export default function HeroUploader() {
                 <p className="text-xs font-semibold text-white">{errorMessage}</p>
                 {activeTab === 'url' && (errorMessage.includes('Upload File') || errorMessage.includes('bot-detection') || errorMessage.includes('restricting') || errorMessage.includes('login required')) && (
                   <p className="mt-1.5 text-[11px] text-[#A1A1A1]">
-                    💡 <strong>Quick Fix:</strong> Click the button to switch to the Upload tab. You can upload the audio or video file directly for instant, unrestricted clip generation.
+                    💡 <strong>Quick Fix:</strong> Click below to switch to the Upload tab. Your video title and settings are preserved so you can simply drop the audio or video file for instant, unrestricted clip generation via Cloudflare R2.
                   </p>
                 )}
               </div>
@@ -783,9 +816,9 @@ export default function HeroUploader() {
                     setActiveTab('upload');
                     setErrorMessage(null);
                   }}
-                  className="rounded-lg bg-white px-3.5 py-1.5 text-xs font-bold text-black hover:bg-[#E5E5E5] transition-colors cursor-pointer shrink-0"
+                  className="rounded-lg bg-white px-3.5 py-1.5 text-xs font-bold text-black hover:bg-[#E5E5E5] transition-colors cursor-pointer shrink-0 shadow-sm"
                 >
-                  Switch to Upload File Tab →
+                  Switch to Upload File Tab (Keep Settings) →
                 </button>
               )}
             </div>

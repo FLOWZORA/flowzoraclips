@@ -84,16 +84,15 @@ ensurePlatformEvaluator().catch(() => {});
 let cachedProxyAgent: any = null;
 
 /**
- * Returns an undici ProxyAgent when YOUTUBE_PROXY_URL or HTTP_PROXY is defined.
- * Routes all YouTube requests through a residential / mobile IP to bypass AWS datacenter blocks.
+ * Returns an undici ProxyAgent when YOUTUBE_PROXY_URL, HTTPS_PROXY, or HTTP_PROXY is defined.
+ * Routes YouTube requests through a proxy to bypass cloud datacenter IP restrictions if needed.
  */
 export async function getProxyAgent(): Promise<any> {
   const proxyUrl =
     process.env.YOUTUBE_PROXY_URL ||
     process.env.HTTPS_PROXY ||
-    process.env.HTTP_PROXY ||
-    'http://nrzdbzhr-rotate:qusf7ir2dlxm@p.webshare.io:80';
-  if (!proxyUrl) return null;
+    process.env.HTTP_PROXY;
+  if (!proxyUrl || !proxyUrl.trim()) return null;
 
   if (!cachedProxyAgent) {
     try {
@@ -108,36 +107,37 @@ export async function getProxyAgent(): Promise<any> {
 }
 
 /**
- * Custom fetch wrapper that automatically routes plain-URL requests through ProxyAgent.
- * IMPORTANT: youtubei.js may pass a Request object as `input`. undici's ProxyAgent cannot
- * handle Request objects — we must extract the URL string and relevant init fields first.
+ * Custom fetch wrapper that routes requests through ProxyAgent when configured.
+ * Safely handles Request objects and falls back gracefully to standard fetch on error.
  */
 export async function customYouTubeFetch(input: any, init?: any): Promise<Response> {
   const agent = await getProxyAgent();
   if (agent) {
-    const { fetch: undiciFetch } = await import('undici');
-    // Extract URL string from Request object if needed (undici ProxyAgent requires a string URL)
-    let urlString: string;
-    let mergedInit: any = init || {};
-    if (typeof input === 'string' || input instanceof URL) {
-      urlString = typeof input === 'string' ? input : input.toString();
-    } else if (input && typeof input === 'object' && 'url' in input) {
-      // Request object — extract url + method + headers + body
-      urlString = (input as Request).url;
-      mergedInit = {
-        method: (input as Request).method,
-        headers: Object.fromEntries((input as Request).headers.entries()),
-        body: ['GET', 'HEAD'].includes((input as Request).method) ? undefined : (input as Request).body,
-        ...init,
-      };
-    } else {
-      urlString = String(input);
+    try {
+      const { fetch: undiciFetch } = await import('undici');
+      let urlString: string;
+      let mergedInit: any = init || {};
+      if (typeof input === 'string' || input instanceof URL) {
+        urlString = typeof input === 'string' ? input : input.toString();
+      } else if (input && typeof input === 'object' && 'url' in input) {
+        urlString = (input as Request).url;
+        mergedInit = {
+          method: (input as Request).method,
+          headers: Object.fromEntries((input as Request).headers.entries()),
+          body: ['GET', 'HEAD'].includes((input as Request).method) ? undefined : (input as Request).body,
+          ...init,
+        };
+      } else {
+        urlString = String(input);
+      }
+      // @ts-ignore
+      return (await undiciFetch(urlString, {
+        ...mergedInit,
+        dispatcher: agent,
+      })) as unknown as Response;
+    } catch (proxyErr: any) {
+      console.warn(`[YouTube Ingest] Proxy fetch error, falling back to direct fetch: ${proxyErr.message}`);
     }
-    // @ts-ignore
-    return undiciFetch(urlString, {
-      ...mergedInit,
-      dispatcher: agent,
-    }) as unknown as Response;
   }
   return fetch(input, init);
 }
@@ -246,11 +246,118 @@ export function normalizeYouTubeCookie(raw?: string): string {
   return str;
 }
 
+interface GuestSession {
+  visitorData: string;
+  cookieHeader: string;
+  cachedAt: number;
+}
+let cachedGuestSession: GuestSession | null = null;
+const GUEST_SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12-hour session cache
+
+/**
+ * Generates an official YouTube guest session with a valid visitorData token and Google consent cookies (SOCS).
+ * Replicates how modern video downloaders (Cobalt, yt-dlp) bypass datacenter IP restrictions
+ * by presenting valid visitor tokens to YouTube's InnerTube API.
+ */
+export async function fetchYouTubeGuestSession(forceRefresh: boolean = false): Promise<{ cookieHeader: string; visitorData: string }> {
+  if (!forceRefresh && cachedGuestSession && (Date.now() - cachedGuestSession.cachedAt < GUEST_SESSION_TTL_MS) && cachedGuestSession.visitorData) {
+    return {
+      cookieHeader: cachedGuestSession.cookieHeader,
+      visitorData: cachedGuestSession.visitorData,
+    };
+  }
+
+  const CONSENT_COOKIE = 'SOCS=CAESEwgDEgk2MTQ5MjcwODQaAmVuIAEaBgiA_LyaBg; PREF=tz=UTC&hl=en; VISITOR_PRIVACY_METADATA=CgJJThIEGgAgNA%3D%3D';
+
+  // Strategy 1: YouTube official visitor_id API endpoint (works reliably across cloud IPs)
+  try {
+    const vRes = await customYouTubeFetch('https://www.youtube.com/youtubei/v1/visitor_id', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Cookie': CONSENT_COOKIE,
+      },
+      body: JSON.stringify({
+        context: {
+          client: {
+            clientName: 'WEB',
+            clientVersion: '2.20240401.01.00',
+            hl: 'en',
+            gl: 'US',
+          },
+        },
+      }),
+    });
+
+    if (vRes.ok) {
+      const vData = await vRes.json();
+      const visitorData = vData?.responseContext?.visitorData;
+      let cookieHeader = CONSENT_COOKIE;
+      try {
+        if (typeof (vRes.headers as any).getSetCookie === 'function') {
+          const raw = (vRes.headers as any).getSetCookie().map((c: string) => c.split(';')[0]).join('; ');
+          if (raw) cookieHeader += '; ' + raw;
+        }
+      } catch (_) {}
+
+      if (visitorData) {
+        cachedGuestSession = {
+          visitorData,
+          cookieHeader,
+          cachedAt: Date.now(),
+        };
+        return { cookieHeader, visitorData };
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[YouTube Ingestion] visitor_id API error: ${err.message}`);
+  }
+
+  // Strategy 2: Fallback to scraping youtube.com root HTML
+  try {
+    const pageRes = await customYouTubeFetch('https://www.youtube.com/', {
+      cache: 'no-store',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cookie': CONSENT_COOKIE,
+      },
+    });
+    const pageHtml = await pageRes.text();
+    let cookieHeader = CONSENT_COOKIE;
+    try {
+      if (typeof (pageRes.headers as any).getSetCookie === 'function') {
+        cookieHeader = (pageRes.headers as any).getSetCookie().map((c: string) => c.split(';')[0]).join('; ');
+      } else {
+        const raw = pageRes.headers.get('set-cookie');
+        if (raw) cookieHeader = raw;
+      }
+    } catch (_) {}
+    const visitorMatch = pageHtml.match(/"VISITOR_DATA":\s*"([^"]+)"/);
+    const visitorData = visitorMatch ? visitorMatch[1] : '';
+    if (visitorData) {
+      cachedGuestSession = {
+        visitorData,
+        cookieHeader,
+        cachedAt: Date.now(),
+      };
+    }
+    return { cookieHeader, visitorData };
+  } catch (_) {
+    return { cookieHeader: CONSENT_COOKIE, visitorData: '' };
+  }
+}
+
+export const fetchYouTubeSession = fetchYouTubeGuestSession;
+
 const innertubeClients: Record<string, Promise<any>> = {};
 
 /**
  * Returns a cached Innertube instance configured with the specified client session.
- * Automatically injects normalized YouTube cookie authentication and sets proper device headers.
+ * Automatically injects normalized YouTube cookie authentication, guest visitorData,
+ * optional po_token, and sets proper device headers.
  */
 export async function getInnertubeClient(type: 'MWEB' | 'ANDROID' | 'IOS' | 'WEB' | 'TV' | 'MUSIC'): Promise<any> {
   if (!innertubeClients[type]) {
@@ -288,11 +395,25 @@ export async function getInnertubeClient(type: 'MWEB' | 'ANDROID' | 'IOS' | 'WEB
         process.env.YT_COOKIES ||
         undefined;
       const cookie = normalizeYouTubeCookie(rawCookie) || undefined;
+      const poToken = process.env.YOUTUBE_PO_TOKEN || process.env.YT_PO_TOKEN || undefined;
+
+      // Automatically obtain guest visitorData token to bypass cloud IP bot checks
+      let visitorData: string | undefined = undefined;
+      try {
+        const guest = await fetchYouTubeGuestSession();
+        if (guest.visitorData) {
+          visitorData = guest.visitorData;
+        }
+      } catch (guestErr: any) {
+        console.warn('[YouTube Ingest] Could not obtain visitorData token:', guestErr?.message || guestErr);
+      }
 
       const session = await Session.create({
         device_category: deviceCategory,
         client_type: clientTypeVal,
         cookie,
+        visitor_data: visitorData,
+        po_token: poToken,
         cache: new UniversalCache(false),
       });
       return new Innertube(session);
@@ -419,81 +540,6 @@ export async function getYouTubeMetadata(url: string, durationSecEstimate: numbe
     thumbnailUrl,
     isEligibleForFreeTier,
   };
-}
-
-/**
- * Direct VisionOS metadata resolver to bypass age-gates & login requirements
- */
-async function fetchYouTubeSession(): Promise<{ cookieHeader: string; visitorData: string }> {
-  const CONSENT_COOKIE = 'SOCS=CAESEwgDEgk2MTQ5MjcwODQaAmVuIAEaBgiA_LyaBg; PREF=tz=UTC&hl=en; VISITOR_PRIVACY_METADATA=CgJJThIEGgAgNA%3D%3D';
-
-  // Strategy 1: YouTube's official visitor_id API endpoint (works 100% reliably from datacenter IPs)
-  try {
-    const vRes = await customYouTubeFetch('https://www.youtube.com/youtubei/v1/visitor_id', {
-      method: 'POST',
-      cache: 'no-store',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Cookie': CONSENT_COOKIE,
-      },
-      body: JSON.stringify({
-        context: {
-          client: {
-            clientName: 'WEB',
-            clientVersion: '2.20240401.01.00',
-            hl: 'en',
-            gl: 'US',
-          },
-        },
-      }),
-    });
-
-    if (vRes.ok) {
-      const vData = await vRes.json();
-      const visitorData = vData?.responseContext?.visitorData;
-      let cookieHeader = CONSENT_COOKIE;
-      try {
-        if (typeof (vRes.headers as any).getSetCookie === 'function') {
-          const raw = (vRes.headers as any).getSetCookie().map((c: string) => c.split(';')[0]).join('; ');
-          if (raw) cookieHeader += '; ' + raw;
-        }
-      } catch (_) {}
-
-      if (visitorData) {
-        return { cookieHeader, visitorData };
-      }
-    }
-  } catch (err: any) {
-    console.warn(`[YouTube Ingestion] visitor_id API error: ${err.message}`);
-  }
-
-  // Strategy 2: Fallback to scraping youtube.com root HTML
-  try {
-    const pageRes = await customYouTubeFetch('https://www.youtube.com/', {
-      cache: 'no-store',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cookie': CONSENT_COOKIE,
-      },
-    });
-    const pageHtml = await pageRes.text();
-    let cookieHeader = CONSENT_COOKIE;
-    try {
-      if (typeof (pageRes.headers as any).getSetCookie === 'function') {
-        cookieHeader = (pageRes.headers as any).getSetCookie().map((c: string) => c.split(';')[0]).join('; ');
-      } else {
-        const raw = pageRes.headers.get('set-cookie');
-        if (raw) cookieHeader = raw;
-      }
-    } catch (_) {}
-    const visitorMatch = pageHtml.match(/"VISITOR_DATA":\s*"([^"]+)"/);
-    const visitorData = visitorMatch ? visitorMatch[1] : '';
-    return { cookieHeader, visitorData };
-  } catch (_) {
-    return { cookieHeader: CONSENT_COOKIE, visitorData: '' };
-  }
 }
 
 async function getMetadataViaVisionOS(videoId: string): Promise<{ title?: string; author?: string; durationSec?: number } | null> {
