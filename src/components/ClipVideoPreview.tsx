@@ -1255,28 +1255,9 @@ export default function ClipVideoPreview({
                   </div>
                 )}
 
-                {/* On-Video Audio/Video Scrubber Bar */}
-                <div
-                  onPointerDown={(e) => {
-                    e.stopPropagation();
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    if (rect.width > 0) {
-                      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                      handleScrubChange(ratio * clipDuration);
-                    }
-                  }}
-                  className="absolute bottom-0 left-0 right-0 h-4 flex items-end cursor-pointer z-30 group/bar select-none"
-                  title="Click or drag to seek timestamp"
-                >
-                  <div className="w-full h-1.5 bg-white/20 group-hover/bar:h-2.5 transition-all relative">
-                    <div
-                      className="h-full bg-[#10B981] relative"
-                      style={{ width: `${progressPercent}%` }}
-                    >
-                      <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-2.5 h-2.5 bg-white rounded-full shadow border border-[#10B981] opacity-80 group-hover/bar:opacity-100 transition-opacity" />
-                    </div>
-                  </div>
-                </div>
+                {/* NOTE: Seeking is handled exclusively by the Master Timeline
+                    Scrubber deck below the video frame. No on-video overlay bar
+                    (a single slider avoids dual-control conflicts). */}
               </div>
             </div>
 
@@ -1306,8 +1287,8 @@ export default function ClipVideoPreview({
                 </span>
               </div>
 
-              {/* Master Range Slider */}
-              <div className="relative w-full flex items-center py-1">
+              {/* Master Range Slider (single seek control for the clip) */}
+              <div className="relative w-full flex items-center py-2">
                 <input
                   type="range"
                   min={0}
@@ -1330,11 +1311,12 @@ export default function ClipVideoPreview({
                     const val = parseFloat((e.target as HTMLInputElement).value);
                     handleSeekCommit(val);
                   }}
-                  className="w-full h-2.5 rounded-full appearance-none cursor-pointer bg-[#1E2230] accent-[#10B981] focus:outline-none transition-all shadow-inner"
+                  className="w-full h-2.5 rounded-full appearance-none cursor-pointer bg-[#1E2230] touch-none select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]/60 shadow-inner transition-all [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-[#10B981] [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:cursor-grab [&::-webkit-slider-thumb]:active:cursor-grabbing [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-[3px] [&::-moz-range-thumb]:border-[#10B981] [&::-moz-range-thumb]:shadow-lg [&::-moz-range-thumb]:cursor-grab [&::-moz-range-track]:bg-transparent"
                   style={{
                     background: `linear-gradient(to right, #10B981 0%, #34D399 ${progressPercent}%, #1E2230 ${progressPercent}%, #1E2230 100%)`,
                   }}
                   title="Slide to seek through clip"
+                  aria-label="Seek through clip"
                 />
               </div>
 
