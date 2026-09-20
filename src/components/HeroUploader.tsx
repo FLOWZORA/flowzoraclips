@@ -23,6 +23,7 @@ import ClipVideoPreview from '@/components/ClipVideoPreview';
 // import CheckoutButton from '@/components/CheckoutButton';
 import AuthModal from '@/components/AuthModal';
 import SocialCopyModal from '@/components/SocialCopyModal';
+import { exportClipInBrowser } from '@/lib/pipeline/client-video-exporter';
 
 interface NaiveClip {
   id: string;
@@ -428,11 +429,50 @@ export default function HeroUploader() {
   };
 
   const [exportingClipId, setExportingClipId] = useState<string | null>(null);
+  const [exportProgress, setExportProgress] = useState<number | null>(null);
 
   const handleExportClip = async (clip: CandidateClip) => {
     setExportingClipId(clip.id);
+    setExportProgress(0);
+
+    const isYouTube = Boolean(
+      sourceMediaUrl &&
+      (sourceMediaUrl.includes('youtube.com') || sourceMediaUrl.includes('youtu.be'))
+    );
+
+    // 1. High-speed client-side rendering with burned-in animated subtitles for local/uploaded files
+    if ((selectedFile || sourceMediaUrl) && !isYouTube) {
+      try {
+        const mediaSource = selectedFile || sourceMediaUrl;
+        const result = await exportClipInBrowser({
+          sourceMedia: mediaSource,
+          clipId: clip.id,
+          startTime: clip.startTime,
+          endTime: clip.endTime,
+          words: clip.words || [],
+          transcriptSnippet: clip.transcriptSnippet || '',
+          scriptPreference,
+          format: '9:16', // Instagram Reels / YouTube Shorts vertical format
+          fitMode: 'fit',
+          onProgress: (pct) => setExportProgress(pct),
+        });
+
+        const a = document.createElement('a');
+        a.href = result.downloadUrl;
+        a.download = result.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setExportingClipId(null);
+        setExportProgress(null);
+        return;
+      } catch (clientErr) {
+        console.warn('[Export] Browser canvas export encountered issue, attempting server fallback:', clientErr);
+      }
+    }
+
+    // 2. Server-side export fallback (for YouTube URLs or fallback)
     try {
-      // Automatically export in Instagram Reels / YouTube Shorts aspect ratio (9:16) with burned-in subtitles
       const exportFormat = '9:16';
       const res = await fetch('/api/export/render', {
         method: 'POST',
@@ -451,23 +491,30 @@ export default function HeroUploader() {
         }),
       });
 
-      const json = await res.json();
-      if (json.success && json.export?.downloadUrl) {
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('video/mp4')) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = json.export.downloadUrl;
+        a.href = url;
         a.download = `flowzora_${clip.id}_reels_shorts_9x16.mp4`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
       } else {
-        // Fallback to direct GET stream
-        const fallbackUrl = `/api/export/render?clipId=${clip.id}&download=true&format=9:16&startTime=${clip.startTime}&endTime=${clip.endTime}&sourceVideoUrl=${encodeURIComponent(sourceMediaUrl || '')}${sourceVideoKey ? `&sourceVideoKey=${encodeURIComponent(sourceVideoKey)}` : ''}&fitMode=fit`;
-        const a = document.createElement('a');
-        a.href = fallbackUrl;
-        a.download = `flowzora_${clip.id}_reels_shorts_9x16.mp4`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        const json = await res.json();
+        if (json.success && json.export?.downloadUrl) {
+          const a = document.createElement('a');
+          a.href = json.export.downloadUrl;
+          a.download = `flowzora_${clip.id}_reels_shorts_9x16.mp4`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        } else {
+          // Direct GET fallback
+          const fallbackUrl = `/api/export/render?clipId=${clip.id}&download=true&format=9:16&startTime=${clip.startTime}&endTime=${clip.endTime}&sourceVideoUrl=${encodeURIComponent(sourceMediaUrl || '')}${sourceVideoKey ? `&sourceVideoKey=${encodeURIComponent(sourceVideoKey)}` : ''}&fitMode=fit`;
+          window.location.href = fallbackUrl;
+        }
       }
     } catch (err) {
       console.error('Export download failed:', err);
@@ -475,6 +522,7 @@ export default function HeroUploader() {
       window.location.href = fallbackUrl;
     } finally {
       setExportingClipId(null);
+      setExportProgress(null);
     }
   };
 
@@ -1018,7 +1066,9 @@ export default function HeroUploader() {
                             {exportingClipId === clip.id ? (
                               <>
                                 <Loader2 className="h-3.5 w-3.5 animate-spin text-[#10B981]" />
-                                <span className="text-[11px] text-[#10B981]">Exporting...</span>
+                                <span className="text-[11px] text-[#10B981] font-mono">
+                                  {exportProgress !== null ? `${exportProgress}%` : 'Exporting...'}
+                                </span>
                               </>
                             ) : (
                               <>

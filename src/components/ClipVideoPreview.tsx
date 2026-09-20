@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { AspectRatio, ScriptPreference, CandidateClip } from '@/lib/pipeline/types';
 import SocialCopyModal from '@/components/SocialCopyModal';
+import { exportClipInBrowser } from '@/lib/pipeline/client-video-exporter';
 
 declare global {
   interface Window {
@@ -858,6 +859,7 @@ export default function ClipVideoPreview({
       : 'w-[min(90vw,520px)] aspect-video h-auto max-h-[350px]';
 
   const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [socialCopyOpen, setSocialCopyOpen] = useState(false);
 
   // Aspect Ratio & Platform mapping with verified canonical dimensions
@@ -880,73 +882,75 @@ export default function ClipVideoPreview({
     {
       id: 'instagram_reel',
       label: 'Instagram Reel',
-      sub: '9:16 Vertical',
+      sub: 'Vertical 9:16',
       ratio: '9:16',
       ratioLabel: '9:16',
       resolution: '1080×1920',
       icon: (
-        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="currentColor">
-          <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+          <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+          <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
         </svg>
       ),
-      activeClass: 'border-[#E1306C] bg-gradient-to-br from-[#E1306C]/25 to-[#833AB4]/15 text-white ring-1 ring-[#E1306C]/70 shadow-[0_0_14px_rgba(225,48,108,0.3)]',
-      hoverClass: 'border-[#2B3040] bg-[#0A0B10] text-[#9AA2B6] hover:border-[#E1306C]/50 hover:text-white',
+      activeClass: 'border-[#10B981] bg-[#10B981]/15 text-white ring-1 ring-[#10B981]/60 shadow-[0_0_10px_rgba(16,185,129,0.2)]',
+      hoverClass: 'border-[#2B3040] bg-[#0A0B10] text-[#9AA2B6] hover:border-[#10B981]/50 hover:text-white',
     },
     {
       id: 'tiktok',
       label: 'TikTok',
-      sub: '9:16 Vertical',
+      sub: 'Vertical 9:16',
       ratio: '9:16',
       ratioLabel: '9:16',
       resolution: '1080×1920',
       icon: (
-        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="currentColor">
-          <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.69a8.17 8.17 0 004.78 1.52V6.75a4.85 4.85 0 01-1.01-.06z"/>
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.04-.1z" />
         </svg>
       ),
-      activeClass: 'border-[#69C9D0] bg-gradient-to-br from-[#010101]/90 to-[#69C9D0]/20 text-white ring-1 ring-[#69C9D0]/70 shadow-[0_0_14px_rgba(105,201,208,0.3)]',
-      hoverClass: 'border-[#2B3040] bg-[#0A0B10] text-[#9AA2B6] hover:border-[#69C9D0]/50 hover:text-white',
+      activeClass: 'border-[#00F2FE] bg-[#00F2FE]/15 text-white ring-1 ring-[#00F2FE]/60 shadow-[0_0_10px_rgba(0,242,254,0.2)]',
+      hoverClass: 'border-[#2B3040] bg-[#0A0B10] text-[#9AA2B6] hover:border-[#00F2FE]/50 hover:text-white',
     },
     {
       id: 'yt_shorts',
       label: 'YouTube Shorts',
-      sub: '9:16 Vertical',
+      sub: 'Vertical 9:16',
       ratio: '9:16',
       ratioLabel: '9:16',
       resolution: '1080×1920',
       icon: (
-        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="currentColor">
-          <path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09L22 12c0 2.19-.16 3.8-.44 4.83-.25.9-.83 1.48-1.73 1.73-.47.13-1.33.22-2.65.28-1.3.07-2.49.1-3.59.1L12 19c-4.19 0-6.8-.16-7.83-.44-.9-.25-1.48-.83-1.73-1.73-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09L2 12c0-2.19.16-3.8.44-4.83.25-.9.83-1.48 1.73-1.73.47-.13 1.33-.22 2.65-.28 1.3-.07 2.49-.1 3.59-.1L12 5c4.19 0 6.8.16 7.83.44.9.25 1.48.83 1.73 1.73z" />
         </svg>
       ),
-      activeClass: 'border-[#FF0000] bg-gradient-to-br from-[#FF0000]/25 to-[#0A0B10] text-white ring-1 ring-[#FF0000]/70 shadow-[0_0_14px_rgba(255,0,0,0.3)]',
+      activeClass: 'border-[#FF0000] bg-[#FF0000]/15 text-white ring-1 ring-[#FF0000]/60 shadow-[0_0_10px_rgba(255,0,0,0.2)]',
       hoverClass: 'border-[#2B3040] bg-[#0A0B10] text-[#9AA2B6] hover:border-[#FF0000]/50 hover:text-white',
     },
     {
       id: 'instagram_feed',
-      label: 'Instagram Post',
-      sub: '1:1 Square',
+      label: 'Instagram Feed',
+      sub: 'Square 1:1',
       ratio: '1:1',
       ratioLabel: '1:1',
       resolution: '1080×1080',
       icon: (
-        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="currentColor">
-          <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
         </svg>
       ),
-      activeClass: 'border-[#E1306C] bg-[#E1306C]/15 text-white ring-1 ring-[#E1306C]/60 shadow-[0_0_10px_rgba(225,48,108,0.2)]',
-      hoverClass: 'border-[#2B3040] bg-[#0A0B10] text-[#9AA2B6] hover:border-[#E1306C]/50 hover:text-white',
+      activeClass: 'border-[#FF5722] bg-[#FF5722]/15 text-white ring-1 ring-[#FF5722]/60 shadow-[0_0_10px_rgba(255,87,34,0.2)]',
+      hoverClass: 'border-[#2B3040] bg-[#0A0B10] text-[#9AA2B6] hover:border-[#FF5722]/50 hover:text-white',
     },
     {
       id: 'youtube',
-      label: 'YouTube Video',
-      sub: '16:9 Landscape',
+      label: 'YouTube (Standard)',
+      sub: 'Landscape 16:9',
       ratio: '16:9',
       ratioLabel: '16:9',
       resolution: '1920×1080',
       icon: (
-        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="currentColor">
-          <path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z" />
         </svg>
       ),
       activeClass: 'border-[#FF0000] bg-[#FF0000]/15 text-white ring-1 ring-[#FF0000]/60 shadow-[0_0_10px_rgba(255,0,0,0.2)]',
@@ -958,15 +962,52 @@ export default function ClipVideoPreview({
 
   const handleExportDownload = async () => {
     setIsExporting(true);
+    setExportProgress(0);
     try {
       const exportFormat = aspectRatio || activePlatform.ratio || '9:16';
+      const isYouTube = Boolean(
+        sourceMediaUrl &&
+        (sourceMediaUrl.includes('youtube.com') || sourceMediaUrl.includes('youtu.be'))
+      );
+
+      // 1. High-speed client-side rendering with burned-in animated subtitles for local/uploaded files
+      if (sourceMediaUrl && !isYouTube) {
+        try {
+          const result = await exportClipInBrowser({
+            sourceMedia: sourceMediaUrl,
+            clipId: clip.id,
+            startTime: clipStart,
+            endTime: clipEnd,
+            words: (clip as any).words || stableWords || [],
+            transcriptSnippet: clip.transcriptSnippet || '',
+            scriptPreference,
+            format: exportFormat,
+            fitMode: framingMode,
+            onProgress: (pct) => setExportProgress(pct),
+          });
+
+          const a = document.createElement('a');
+          a.href = result.downloadUrl;
+          a.download = result.filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setIsExporting(false);
+          setExportProgress(null);
+          return;
+        } catch (browserErr) {
+          console.warn('[Export] Browser export error, falling back to server:', browserErr);
+        }
+      }
+
+      // 2. Server-side export fallback
       const res = await fetch('/api/export/render', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clipId: clip.id,
-          startTime: clip.startTime,
-          endTime: clip.endTime,
+          startTime: clipStart,
+          endTime: clipEnd,
           scriptPreference,
           format: exportFormat,
           fitMode: framingMode,
@@ -977,19 +1018,37 @@ export default function ClipVideoPreview({
         }),
       });
 
-      const json = await res.json();
-      if (json.success && json.export?.downloadUrl) {
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('video/mp4')) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = json.export.downloadUrl;
+        a.href = url;
         a.download = `flowzora_${clip.id}_${activePlatform.id}_${activePlatform.ratioLabel.replace(':', 'x')}.mp4`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+      } else {
+        const json = await res.json();
+        if (json.success && json.export?.downloadUrl) {
+          const a = document.createElement('a');
+          a.href = json.export.downloadUrl;
+          a.download = `flowzora_${clip.id}_${activePlatform.id}_${activePlatform.ratioLabel.replace(':', 'x')}.mp4`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        } else {
+          const fallbackUrl = `/api/export/render?clipId=${clip.id}&download=true&format=${exportFormat}&startTime=${clipStart}&endTime=${clipEnd}&sourceVideoUrl=${encodeURIComponent(sourceMediaUrl || '')}${sourceVideoKey ? `&sourceVideoKey=${encodeURIComponent(sourceVideoKey)}` : ''}&fitMode=${framingMode}`;
+          window.location.href = fallbackUrl;
+        }
       }
     } catch (err) {
       console.error('Export download failed:', err);
+      const fallbackUrl = `/api/export/render?clipId=${clip.id}&download=true&format=${aspectRatio || '9:16'}&startTime=${clipStart}&endTime=${clipEnd}&sourceVideoUrl=${encodeURIComponent(sourceMediaUrl || '')}${sourceVideoKey ? `&sourceVideoKey=${encodeURIComponent(sourceVideoKey)}` : ''}&fitMode=${framingMode}`;
+      window.location.href = fallbackUrl;
     } finally {
       setIsExporting(false);
+      setExportProgress(null);
     }
   };
 
@@ -1531,7 +1590,11 @@ export default function ClipVideoPreview({
                   {isExporting ? (
                     <>
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Rendering &amp; Downloading MP4...</span>
+                      <span className="font-mono">
+                        {exportProgress !== null
+                          ? `Rendering ${activePlatform.ratioLabel} with Subtitles (${exportProgress}%)...`
+                          : 'Rendering & Downloading MP4...'}
+                      </span>
                     </>
                   ) : (
                     <>

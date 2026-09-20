@@ -105,29 +105,9 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 4. Source Video Fallback: If trimming failed, provide user's uploaded source video (never a generic sample)
-    if ((!fileBuffer || fileBuffer.length <= 50000) && sourceVideoKey) {
-      const stored = inMemoryR2.get(sourceVideoKey);
-      if (stored?.buffer && stored.buffer.length > 50000) {
-        fileBuffer = stored.buffer;
-      }
-    }
-    if (!fileBuffer || fileBuffer.length <= 50000) {
-      const tmpSourcePath = path.join(os.tmpdir(), 'flowzora_latest_source.mp4');
-      if (fs.existsSync(tmpSourcePath)) {
-        fileBuffer = fs.readFileSync(tmpSourcePath);
-      }
-    }
-    if (!fileBuffer || fileBuffer.length <= 50000) {
-      const uploadsPath = path.resolve(process.cwd(), 'public/media/uploads/latest_source.mp4');
-      if (fs.existsSync(uploadsPath)) {
-        fileBuffer = fs.readFileSync(uploadsPath);
-      }
-    }
-
     if (!fileBuffer || fileBuffer.length <= 50000) {
       return NextResponse.json(
-        { error: 'Clip export not found. Please upload a video file or generate clips first.' },
+        { error: 'Clip export not found or rendering is still in progress. Please export via browser or wait a moment.' },
         { status: 404 }
       );
     }
@@ -189,6 +169,36 @@ export async function POST(req: NextRequest) {
       words,
       transcriptSnippet,
     });
+
+    // Check if direct video stream was requested
+    const filename = `flowzora_${clipId}_${Math.round(Number(startTime))}s-${Math.round(Number(endTime))}s_${format.replace(':', 'x')}.mp4`;
+    const localExportPath = path.resolve(process.cwd(), 'public/media/exports', filename);
+    const tmpExportPath = path.join(os.tmpdir(), filename);
+    let fileBuffer: Buffer | null = null;
+    if (fs.existsSync(localExportPath)) {
+      const sz = fs.statSync(localExportPath).size;
+      if (sz > 50000) fileBuffer = fs.readFileSync(localExportPath);
+    }
+    if (!fileBuffer && fs.existsSync(tmpExportPath)) {
+      const sz = fs.statSync(tmpExportPath).size;
+      if (sz > 50000) fileBuffer = fs.readFileSync(tmpExportPath);
+    }
+    if (!fileBuffer && inMemoryR2.has(filename)) {
+      const it = inMemoryR2.get(filename);
+      if (it?.buffer && it.buffer.length > 50000) fileBuffer = it.buffer;
+    }
+
+    const wantsDirectVideo =
+      req.headers.get('accept')?.includes('video/mp4') ||
+      req.nextUrl.searchParams.get('download') === 'true';
+
+    if (wantsDirectVideo && fileBuffer && fileBuffer.length > 50000) {
+      const headers = new Headers();
+      headers.set('Content-Type', 'video/mp4');
+      headers.set('Content-Length', String(fileBuffer.length));
+      headers.set('Content-Disposition', `attachment; filename="${filename}"`);
+      return new NextResponse(fileBuffer as any, { status: 200, headers });
+    }
 
     return NextResponse.json({
       success: true,
