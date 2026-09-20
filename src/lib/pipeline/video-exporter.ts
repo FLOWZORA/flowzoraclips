@@ -97,14 +97,31 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
     const firstStart = Number(rawWords[0]?.start ?? 0);
     const isAbsolute = startTime > 0.5 && (firstStart >= startTime - 3.0 || firstStart > durationSec);
     const offset = isAbsolute ? startTime : 0;
-    effectiveWords = rawWords
-      .map((w) => ({
+    const mapWithOffset = (off: number) =>
+      rawWords
+        .map((w) => ({
+          word: w.word,
+          start: Math.max(0, Number((Number(w.start ?? 0) - off).toFixed(2))),
+          end: Math.max(0.1, Number((Number(w.end ?? (Number(w.start ?? 0) + 0.3)) - off).toFixed(2))),
+          devanagari: w.devanagari,
+        }))
+        .filter((w) => w.start <= durationSec + 1);
+    effectiveWords = mapWithOffset(offset);
+    // Safety net: offset guess wiped everything (e.g. trim/nudge-shifted
+    // timestamps) — the raw times are untrustworthy, so distribute the words
+    // evenly across the clip instead of rendering zero subtitles.
+    if (effectiveWords.length === 0) {
+      console.warn(
+        `[Video Exporter] Word-offset mismatch for clip ${clipId} (startTime=${startTime}, firstWord=${firstStart}); distributing words evenly.`
+      );
+      const list = rawWords.filter((w) => (w.word || '').length > 0);
+      effectiveWords = list.map((w, i) => ({
         word: w.word,
-        start: Math.max(0, Number((Number(w.start ?? 0) - offset).toFixed(2))),
-        end: Math.max(0.1, Number((Number(w.end ?? (Number(w.start ?? 0) + 0.3)) - offset).toFixed(2))),
+        start: Number((((i / list.length) * durationSec)).toFixed(2)),
+        end: Number((((i + 0.9) / list.length) * durationSec).toFixed(2)),
         devanagari: w.devanagari,
-      }))
-      .filter((w) => w.start <= durationSec + 1);
+      }));
+    }
   }
 
   // If words are missing or empty, synthesize evenly spaced words from transcriptSnippet

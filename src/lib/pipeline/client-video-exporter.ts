@@ -127,16 +127,36 @@ export async function exportClipInBrowser(
   const isAbsolute = startTime > 0.5 && (firstStart >= startTime - 3.0 || firstStart > duration);
   const offset = isAbsolute ? startTime : 0;
 
-  let mappedWords = (words || []).map((w: any) => {
-    const rawS = Number(w.start ?? w.relStart ?? 0);
-    const rawE = Number(w.end ?? w.relEnd ?? rawS + 0.35);
-    return {
+  const mapWithOffset = (off: number) =>
+    (words || []).map((w: any) => {
+      const rawS = Number(w.start ?? w.relStart ?? 0);
+      const rawE = Number(w.end ?? w.relEnd ?? rawS + 0.35);
+      return {
+        word: String(w.word || ''),
+        devanagari: String(w.devanagari || w.word || ''),
+        relStart: Math.max(0, Number((rawS - off).toFixed(2))),
+        relEnd: Math.max(0.12, Number((rawE - off).toFixed(2))),
+      };
+    }).filter((w) => w.relStart <= duration + 0.5);
+
+  let mappedWords = mapWithOffset(offset);
+
+  // Safety net: if the offset guess wiped out every word (e.g. timestamps
+  // relative to a trimmed/nudged start instead of the clip start), the raw
+  // times are untrustworthy — distribute the words evenly across the clip so
+  // captions stay visible instead of vanishing entirely.
+  if (mappedWords.length === 0 && (words || []).length > 0) {
+    console.warn(
+      `[Export] Word-offset mismatch (startTime=${startTime}, firstWord=${firstStart}); distributing words evenly.`
+    );
+    const list = (words || []).filter((w: any) => String(w.word || '').length > 0);
+    mappedWords = list.map((w: any, i: number) => ({
       word: String(w.word || ''),
       devanagari: String(w.devanagari || w.word || ''),
-      relStart: Math.max(0, Number((rawS - offset).toFixed(2))),
-      relEnd: Math.max(0.12, Number((rawE - offset).toFixed(2))),
-    };
-  }).filter((w) => w.relStart <= duration + 0.5);
+      relStart: Number((((i / list.length) * duration)).toFixed(2)),
+      relEnd: Number((((i + 0.9) / list.length) * duration).toFixed(2)),
+    }));
+  }
 
   // If words are missing, synthesize from transcriptSnippet
   if (mappedWords.length === 0 && transcriptSnippet) {
@@ -150,6 +170,10 @@ export async function exportClipInBrowser(
         relEnd: Number(((i + 0.9) * step).toFixed(2)),
       }));
     }
+  }
+
+  if (mappedWords.length === 0) {
+    console.warn(`[Export] No subtitle words available for clip ${clipId} — download will have no captions.`);
   }
 
   // Group words into natural subtitle phrases with continuous handoff
