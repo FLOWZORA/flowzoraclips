@@ -48,8 +48,13 @@ ${candidate.text}
 
 Evaluate this candidate and respond with structured JSON.`;
 
+      const configuredModel = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+      const model = configuredModel === 'gemini-2.5-flash' || configuredModel === 'gemini-2.0-flash'
+        ? 'gemini-3.6-flash'
+        : configuredModel;
+
       const response = await ai.models.generateContent({
-        model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+        model,
         contents: prompt,
         config: {
           systemInstruction: SCORING_SYSTEM_INSTRUCTION,

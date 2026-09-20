@@ -55,13 +55,34 @@ export function formatDuration(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+let androidInnertubePromise: Promise<any> | null = null;
+
 /**
- * Fetches YouTube video metadata with exact duration and high-res thumbnail.
- * Uses Innertube (pure JS) with fallback to official oEmbed.
+ * Returns a cached Innertube instance configured with an Android mobile client session.
+ * Android mobile sessions bypass YouTube's datacenter IP bot-checks, age-gates,
+ * and "Video is login required" restrictions without requiring user login cookies.
  */
+export async function getAndroidInnertube() {
+  if (!androidInnertubePromise) {
+    androidInnertubePromise = (async () => {
+      const { Session, Innertube, ClientType, UniversalCache } = await import('youtubei.js');
+      const session = await Session.create({
+        device_category: 'mobile',
+        client_type: ClientType.ANDROID,
+        cache: new UniversalCache(false),
+      });
+      return new Innertube(session);
+    })().catch((err) => {
+      androidInnertubePromise = null;
+      throw err;
+    });
+  }
+  return androidInnertubePromise;
+}
+
 /**
  * Fetches YouTube video metadata with exact duration and high-res thumbnail.
- * Multi-layer resolver: VisionOS client -> Innertube -> Official oEmbed with browser headers.
+ * Multi-layer resolver: Android mobile session -> Official oEmbed -> VisionOS -> watch page HTML regex.
  */
 export async function getYouTubeMetadata(url: string, durationSecEstimate: number = 480): Promise<YouTubeVideoMetadata> {
   const { videoId, isValid } = parseYouTubeUrl(url);
@@ -104,28 +125,43 @@ export async function getYouTubeMetadata(url: string, durationSecEstimate: numbe
     console.warn(`[YouTube Ingestion] oEmbed lookup failed for ${videoId}: ${err.message}`);
   }
 
-  // 2. Resolve video duration: try watch page HTML regex (fast, reliable on datacenter IPs)
+  // 2. Query Android mobile session getBasicInfo for exact duration, title, and high-res thumbnail
   try {
-    const watchRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-      cache: 'no-store',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    });
-    if (watchRes.ok) {
-      const html = await watchRes.text();
-      const lenMatch = html.match(/"lengthSeconds":\s*"(\d+)"/);
-      if (lenMatch && lenMatch[1]) {
-        durationSec = Number(lenMatch[1]);
-      } else {
-        const durMatch = html.match(/"approxDurationMs":\s*"(\d+)"/);
-        if (durMatch && durMatch[1]) {
-          durationSec = Math.round(Number(durMatch[1]) / 1000);
-        }
+    const yt = await getAndroidInnertube();
+    const basic = await yt.getBasicInfo(videoId);
+    if (basic?.basic_info) {
+      if (basic.basic_info.title) title = basic.basic_info.title;
+      if (basic.basic_info.author) author = basic.basic_info.author;
+      if (basic.basic_info.duration) durationSec = Number(basic.basic_info.duration);
+      if (basic.basic_info.thumbnail?.[0]?.url) {
+        thumbnailUrl = basic.basic_info.thumbnail[0].url;
       }
     }
-  } catch (_) {}
+  } catch (androidMetaErr: any) {
+    console.warn(`[YouTube Ingestion] Android basic_info error: ${androidMetaErr.message}`);
+    // Fallback: watch page HTML regex
+    try {
+      const watchRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+        cache: 'no-store',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+      });
+      if (watchRes.ok) {
+        const html = await watchRes.text();
+        const lenMatch = html.match(/"lengthSeconds":\s*"(\d+)"/);
+        if (lenMatch && lenMatch[1]) {
+          durationSec = Number(lenMatch[1]);
+        } else {
+          const durMatch = html.match(/"approxDurationMs":\s*"(\d+)"/);
+          if (durMatch && durMatch[1]) {
+            durationSec = Math.round(Number(durMatch[1]) / 1000);
+          }
+        }
+      }
+    } catch (_) {}
+  }
 
   // 3. Try VisionOS endpoint for higher-fidelity metadata if duration is still default
   if (durationSec === durationSecEstimate) {
@@ -405,10 +441,65 @@ async function extractViaVisionOS(
 }
 
 /**
+ * Attempts to transcode an in-memory fragmented stream (AAC/Opus/MP4/WebM)
+ * to a lightweight 64kbps MP3 via ffmpeg.
+ *
+ * Benefits:
+ * 1. Shrinks upload payload by 70-80% (~1MB vs ~8MB).
+ * 2. Fixes Groq/OpenAI Whisper rate-limit bug where container headers of 2-hour podcasts
+ *    cause Whisper to deduct 7200 seconds of quota instead of the actual preview duration.
+ * 3. Gracefully falls back to original raw buffer if ffmpeg is unavailable.
+ */
+async function transcodeToMp3IfPossible(rawBuffer: Buffer, videoId: string): Promise<{ buffer: Buffer; filename: string }> {
+  try {
+    const { spawn } = await import('child_process');
+    const ffmpegModule: any = await import('@ffmpeg-installer/ffmpeg');
+    const ffmpegPath = ffmpegModule.default?.path || ffmpegModule.path;
+
+    if (!ffmpegPath) {
+      return { buffer: rawBuffer, filename: `youtube_${videoId}.m4a` };
+    }
+
+    const mp3Buffer = await new Promise<Buffer>((resolve, reject) => {
+      const proc = spawn(ffmpegPath, [
+        '-i', 'pipe:0',
+        '-vn',
+        '-c:a', 'libmp3lame',
+        '-b:a', '64k',
+        '-f', 'mp3',
+        'pipe:1',
+      ]);
+      const out: Buffer[] = [];
+      proc.stdout.on('data', (d) => out.push(d));
+      proc.stderr.on('data', () => {});
+      proc.on('close', (code) => {
+        if (code === 0 && out.length > 0) {
+          resolve(Buffer.concat(out));
+        } else {
+          reject(new Error(`ffmpeg exited with code ${code}`));
+        }
+      });
+      proc.on('error', (err) => reject(err));
+      proc.stdin.write(rawBuffer);
+      proc.stdin.end();
+    });
+
+    if (mp3Buffer && mp3Buffer.length > 1024) {
+      console.log(`[YouTube Ingest] Transcoded ${(rawBuffer.length / (1024 * 1024)).toFixed(2)} MB stream to ${(mp3Buffer.length / (1024 * 1024)).toFixed(2)} MB MP3.`);
+      return { buffer: mp3Buffer, filename: `youtube_${videoId}.mp3` };
+    }
+  } catch (err: any) {
+    console.warn(`[YouTube Ingest] MP3 transcode fallback to raw stream: ${err.message}`);
+  }
+
+  return { buffer: rawBuffer, filename: `youtube_${videoId}.m4a` };
+}
+
+/**
  * Extracts the audio stream from a YouTube video URL.
  * Multi-tier extraction strategy:
- * 1. VisionOS Direct Stream (bypasses age-gates and login-requirements without bot detection)
- * 2. Pure Node.js in-memory stream via YouTube.js (InnerTube ANDROID client)
+ * 1. Android Mobile Session (InnerTube pure-JS client, zero bot checks, zero login required)
+ * 2. VisionOS Direct Stream (bypasses signature cipher)
  * 3. Remote Video Worker (Railway / Render) if configured
  * 4. Local Python & yt-dlp via os.tmpdir() (safe for non-serverless dev hosts)
  */
@@ -436,7 +527,51 @@ export async function extractYouTubeAudioStream(
   let lastErrorMsg = '';
 
   // --------------------------------------------------------------------------
-  // STRATEGY 0: VisionOS Direct Stream (Bypasses login-gates, age-gates, and signature cipher)
+  // STRATEGY 0: YouTube Android Mobile Client (Innertube Android Session)
+  // Bypasses YouTube's bot-detection, login requirements, and datacenter IP blocks.
+  // Directly streams un-ciphered audio in-memory, 100% Serverless compatible on Vercel.
+  // --------------------------------------------------------------------------
+  try {
+    console.log(`[YouTube Ingest] Attempting Android mobile audio stream for "${metadata.title}" (${metadata.videoId})...`);
+    const yt = await getAndroidInnertube();
+    const stream = await yt.download(metadata.videoId, { type: 'audio' });
+
+    if (stream) {
+      const reader = stream.getReader();
+      const chunks: Uint8Array[] = [];
+      let totalBytes = 0;
+      // 10 MB ceiling (~15-20 minutes of audio, comfortably under Groq Whisper 25 MB limit)
+      const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        totalBytes += value.length;
+        if (totalBytes >= MAX_AUDIO_BYTES) {
+          try { await reader.cancel(); } catch (_) {}
+          break;
+        }
+      }
+
+      if (chunks.length > 0 && totalBytes > 1024) {
+        const rawBuffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+        console.log(`[YouTube Ingest] Successfully extracted ${(rawBuffer.length / (1024 * 1024)).toFixed(2)} MB via Android mobile session for "${metadata.title}"`);
+        const { buffer: audioBuffer, filename } = await transcodeToMp3IfPossible(rawBuffer, metadata.videoId);
+        return {
+          audioBuffer,
+          filename,
+          metadata,
+        };
+      }
+    }
+  } catch (androidErr: any) {
+    lastErrorMsg = androidErr.message;
+    console.warn(`[YouTube Ingest] Android mobile extraction failed: ${androidErr.message}. Attempting VisionOS fallback...`);
+  }
+
+  // --------------------------------------------------------------------------
+  // STRATEGY 1: VisionOS Direct Stream (Bypasses signature cipher)
   // 100% Serverless compatible on Vercel
   // --------------------------------------------------------------------------
   const visionResult = await extractViaVisionOS(metadata.videoId, metadata.title);
@@ -452,68 +587,6 @@ export async function extractYouTubeAudioStream(
   }
   if (visionResult?.error) {
     lastErrorMsg = visionResult.error;
-  }
-
-  // --------------------------------------------------------------------------
-  // STRATEGY 1: Pure JavaScript / TypeScript in-memory audio extraction (youtubei.js)
-  // Zero Python, zero external binaries, 100% safe on Vercel Serverless / AWS Lambda.
-  // --------------------------------------------------------------------------
-  try {
-    const { Innertube, UniversalCache } = await import('youtubei.js');
-    const yt = await Innertube.create({
-      cache: new UniversalCache(false),
-    });
-
-    // Android client delivers direct, un-ciphered audio streams
-    let stream: any = null;
-    try {
-      stream = await yt.download(metadata.videoId, {
-        type: 'audio',
-        client: 'ANDROID',
-      });
-    } catch (androidErr: any) {
-      console.warn(`[YouTube Ingest] ANDROID client download failed: ${androidErr.message}, trying default client...`);
-      try {
-        stream = await yt.download(metadata.videoId, {
-          type: 'audio',
-        });
-      } catch (defaultErr: any) {
-        console.warn(`[YouTube Ingest] Default client download failed: ${defaultErr.message}`);
-        lastErrorMsg = androidErr.message || defaultErr.message;
-      }
-    }
-
-    if (stream) {
-      const reader = stream.getReader();
-      const chunks: Uint8Array[] = [];
-      let totalBytes = 0;
-      // 18 MB ceiling (~25 minutes of audio, comfortably under Groq Whisper 25 MB limit)
-      const MAX_AUDIO_BYTES = 18 * 1024 * 1024;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        totalBytes += value.length;
-        if (totalBytes >= MAX_AUDIO_BYTES) {
-          try { await reader.cancel(); } catch (_) {}
-          break;
-        }
-      }
-
-      if (chunks.length > 0 && totalBytes > 1024) {
-        const audioBuffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
-        console.log(`[YouTube Ingest] Successfully extracted ${(audioBuffer.length / (1024 * 1024)).toFixed(2)} MB via YouTube.js for "${metadata.title}"`);
-        return {
-          audioBuffer,
-          filename: `youtube_${metadata.videoId}.m4a`,
-          metadata,
-        };
-      }
-    }
-  } catch (innertubeErr: any) {
-    lastErrorMsg = innertubeErr.message;
-    console.warn(`[YouTube Ingest] Pure-JS YouTube.js extraction failed: ${innertubeErr.message}. Attempting fallbacks...`);
   }
 
   // --------------------------------------------------------------------------

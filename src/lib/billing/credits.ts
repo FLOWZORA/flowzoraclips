@@ -2,7 +2,7 @@ import { getSupabaseAdmin, inMemoryDb } from '../db/supabase';
 
 export const IS_COMPLETELY_FREE: boolean = true; // Toggle for 100% free beta period
 export const MAX_FREE_VIDEO_DURATION_SEC = 600; // 10 minutes default free cap
-export const MAX_PAID_VIDEO_DURATION_SEC = 3600; // 60 minutes max processing cap
+export const MAX_PAID_VIDEO_DURATION_SEC = 7200; // 120 minutes (2 hours) max processing cap for podcasts & talk shows
 
 export interface CreditEligibilityResult {
   allowed: boolean;
@@ -20,12 +20,12 @@ export async function validateProcessingEligibility(
   userId: string,
   durationSeconds: number
 ): Promise<CreditEligibilityResult> {
-  // If in 100% free beta mode, allow all users with high duration limits (up to 60 min)
+  // If in 100% free beta mode, allow all users with high duration limits (up to 120 min)
   if (IS_COMPLETELY_FREE) {
     if (durationSeconds > MAX_PAID_VIDEO_DURATION_SEC) {
       return {
         allowed: false,
-        reason: `Video length (${Math.round(durationSeconds / 60)} min) exceeds the maximum 60-minute processing limit during free beta.`,
+        reason: `Video length (${Math.round(durationSeconds / 60)} min) exceeds the maximum 120-minute processing limit during free beta.`,
         creditsRemaining: 999,
         plan: 'free_beta',
         isFreeTier: true,

@@ -108,7 +108,7 @@ export default function HeroUploader() {
         if (json.success && json.metadata) {
           setYoutubeMetadata(json.metadata);
           if (!json.metadata.isEligibleForFreeTier) {
-            setErrorMessage(`Video duration (${json.metadata.formattedDuration}) exceeds the maximum 60-minute processing limit.`);
+            setErrorMessage(`Video duration (${json.metadata.formattedDuration}) exceeds the maximum 120-minute processing limit.`);
           }
         }
       } catch (err) {
