@@ -113,13 +113,22 @@ export async function exportClipToMp4(options: ExportRenderOptions): Promise<Exp
     const offset = isAbsolute ? startTime : 0;
     const mapWithOffset = (off: number) =>
       cleanRawWords
-        .map((w) => ({
-          word: w.word,
-          start: Math.max(0, Number((Number(w.start ?? 0) - off).toFixed(2))),
-          end: Math.max(0.1, Number((Number(w.end ?? (Number(w.start ?? 0) + 0.3)) - off).toFixed(2))),
-          devanagari: w.devanagari,
-        }))
-        .filter((w) => w.start <= durationSec + 1);
+        .map((w) => {
+          // Relative position BEFORE clamping, so words spoken entirely
+          // before the clip starts (e.g. after a trim/nudge moved startTime
+          // forward) can be excluded instead of piling up at 0.0s.
+          const relStart = Number((Number(w.start ?? 0) - off).toFixed(2));
+          const relEnd = Number((Number(w.end ?? (Number(w.start ?? 0) + 0.3)) - off).toFixed(2));
+          return {
+            word: w.word,
+            start: Math.max(0, relStart),
+            end: Math.max(0.1, relEnd),
+            devanagari: w.devanagari,
+            _relEnd: relEnd,
+          };
+        })
+        .filter((w) => w._relEnd > 0.15 && w.start <= durationSec + 1)
+        .map(({ _relEnd, ...w }) => w);
     effectiveWords = mapWithOffset(offset);
     // Safety net: offset guess wiped everything (e.g. trim/nudge-shifted
     // timestamps) — the raw times are untrustworthy, so distribute the words

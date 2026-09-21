@@ -97,7 +97,10 @@ export default function ClipVideoPreview({
         (firstStart >= clipStart - 3.0 || firstStart > clipDuration);
       const offset = isAbsolute ? clipStart : 0;
 
-      // Map to relative timestamps, sanitize negative or NaN values, and sort chronologically
+      // Map to relative timestamps, sanitize negative or NaN values, and sort chronologically.
+      // Words spoken entirely before clipStart (e.g. after a trim/nudge moved
+      // the start forward) are excluded — clamping them to 0 would show the
+      // wrong text over the opening frames.
       const mapped = rawWords
         .map((w: any) => {
           const rawStart = Number(w.start ?? 0);
@@ -112,29 +115,39 @@ export default function ClipVideoPreview({
             ...w,
             relStart: Number(s.toFixed(2)),
             relEnd: Number(e.toFixed(2)),
+            _relEnd: Number.isFinite(rawEnd) ? Number((rawEnd - offset).toFixed(2)) : e,
           };
         })
-        .sort((a: any, b: any) => a.relStart - b.relStart);
+        .sort((a: any, b: any) => a.relStart - b.relStart)
+        .filter((w: any) => w._relEnd > 0.15)
+        .map((w: any) => {
+          const { _relEnd, ...rest } = w;
+          return rest;
+        });
 
-      // Enforce strictly monotonic progression with minimum spacing and non-overlapping bounds
-      for (let i = 0; i < mapped.length; i++) {
-        if (i > 0) {
-          if (mapped[i].relStart < mapped[i - 1].relStart + 0.10) {
-            mapped[i].relStart = Number((mapped[i - 1].relStart + 0.10).toFixed(2));
+      // Every word predates the clip start — fall through to the synthetic
+      // snippet fallback below rather than rendering wrong words at 0s.
+      if (mapped.length > 0) {
+        // Enforce strictly monotonic progression with minimum spacing and non-overlapping bounds
+        for (let i = 0; i < mapped.length; i++) {
+          if (i > 0) {
+            if (mapped[i].relStart < mapped[i - 1].relStart + 0.10) {
+              mapped[i].relStart = Number((mapped[i - 1].relStart + 0.10).toFixed(2));
+            }
+            if (mapped[i - 1].relEnd > mapped[i].relStart) {
+              mapped[i - 1].relEnd = mapped[i].relStart;
+            }
           }
-          if (mapped[i - 1].relEnd > mapped[i].relStart) {
-            mapped[i - 1].relEnd = mapped[i].relStart;
+          if (mapped[i].relEnd <= mapped[i].relStart + 0.12) {
+            mapped[i].relEnd = Number((mapped[i].relStart + 0.20).toFixed(2));
+          }
+          if (mapped[i].relEnd > mapped[i].relStart + 1.6) {
+            mapped[i].relEnd = Number((mapped[i].relStart + 1.1).toFixed(2));
           }
         }
-        if (mapped[i].relEnd <= mapped[i].relStart + 0.12) {
-          mapped[i].relEnd = Number((mapped[i].relStart + 0.20).toFixed(2));
-        }
-        if (mapped[i].relEnd > mapped[i].relStart + 1.6) {
-          mapped[i].relEnd = Number((mapped[i].relStart + 1.1).toFixed(2));
-        }
+
+        return mapped;
       }
-
-      return mapped;
     }
 
     // Synthetic fallback: distribute transcript snippet words evenly across clipDuration

@@ -118,11 +118,28 @@ async function transcribeSingleChunk(
     formData.append('timestamp_granularities[]', 'word');
     formData.append('timestamp_granularities[]', 'segment');
 
-    if (language === 'english' || !language) {
+    // Language hint: forcing a single language on code-switched (Hinglish)
+    // speech makes Whisper approximate Hindi words as English (or vice
+    // versa), so only pin the language when it is unambiguous. For
+    // hinglish/auto the parameter is omitted and Whisper auto-detects.
+    if (language === 'english') {
       formData.append('language', 'en');
+    } else if (language === 'hindi') {
+      formData.append('language', 'hi');
     }
 
-    const promptText = 'Podcast interview and discussion in English.';
+    // Context prompt steers spelling/vocabulary toward the actual content.
+    // Keep it short (Whisper only conditions on the first ~224 tokens) and
+    // match it to the selected language — a mismatched prompt biases the
+    // decoder toward the wrong vocabulary.
+    const promptText =
+      language === 'hindi'
+        ? 'हिंदी पॉडकास्ट चर्चा और साक्षात्कार।'
+        : language === 'hinglish'
+          ? 'Hinglish podcast discussion, Hindi-English code-switching conversation with speakers switching between Hindi and English.'
+          : language === 'auto'
+            ? 'Podcast interview and discussion, possibly Hindi-English code-switching (Hinglish).'
+            : 'Podcast interview and discussion in English.';
 
     formData.append('prompt', promptText);
 
@@ -163,7 +180,7 @@ async function transcribeSingleChunk(
  * Transcribe audio larger than the 25 MB single-request limit by splitting it
  * into sequential ffmpeg chunks (~20 MB each at 64kbps ≈ 42 min), transcribing
  * each piece, and concatenating with timestamps re-offset to the full timeline.
- * Supports sources up to ~120 minutes (up to 4 chunks).
+ * Supports sources up to ~120 minutes (up to 6 chunks).
  */
 async function transcribeAudioInChunks(
   audioBuffer: Buffer | Uint8Array,
@@ -200,20 +217,27 @@ async function transcribeAudioInChunks(
   console.log(
     `[Whisper] Audio ${(totalBytes / (1024 * 1024)).toFixed(1)} MB exceeds 25 MB limit — splitting into ${numChunks} chunks (~${Math.round(chunkDurationSec)}s each) for sequential transcription...`
   );
+  // Chunk boundaries can slice mid-word, leaving each side with a word
+  // fragment Whisper mis-transcribes. Every chunk after the first therefore
+  // starts OVERLAP_SEC early; words falling inside the overlapped region are
+  // dropped from the later chunk (the earlier chunk heard the word whole).
+  const OVERLAP_SEC = 3;
   try {
     fs.writeFileSync(inPath, audioBuffer as Buffer);
     const chunkResults: WhisperTranscriptionResult[] = [];
     for (let i = 0; i < numChunks; i++) {
-      const startSec = i * chunkDurationSec;
+      const nominalStart = i * chunkDurationSec;
+      const extractStart = i === 0 ? 0 : Math.max(0, nominalStart - OVERLAP_SEC);
+      const nominalEnd =
+        i === numChunks - 1 ? estimatedTotalSec : (i + 1) * chunkDurationSec;
       // Last chunk takes the remainder so no audio is dropped to rounding.
-      const durSec =
-        i === numChunks - 1 ? Math.max(1, estimatedTotalSec - startSec) : chunkDurationSec;
+      const durSec = Math.max(1, nominalEnd - extractStart);
       const outPath = path.join(tmpDir, `${uid}_part${i}.mp3`);
       try {
         await execFileAsync(ffmpegPath, [
           '-y',
           '-ss',
-          String(Math.floor(startSec)),
+          String(Math.floor(extractStart)),
           '-i',
           inPath,
           '-t',
@@ -230,25 +254,31 @@ async function transcribeAudioInChunks(
         ]);
         const partBuffer = fs.readFileSync(outPath);
         console.log(
-          `[Whisper] Transcribing chunk ${i + 1}/${numChunks} (${(partBuffer.length / (1024 * 1024)).toFixed(1)} MB, offset ${Math.round(startSec)}s)...`
+          `[Whisper] Transcribing chunk ${i + 1}/${numChunks} (${(partBuffer.length / (1024 * 1024)).toFixed(1)} MB, offset ${Math.round(extractStart)}s)...`
         );
         const part = await transcribeSingleChunk(partBuffer, filename, language, config);
-        // Re-offset chunk-local timestamps onto the full timeline.
-        const offsetWords: WordTimestamp[] = part.words.map((w) => ({
-          word: w.word,
-          start: Number((w.start + startSec).toFixed(2)),
-          end: Number((w.end + startSec).toFixed(2)),
-        }));
-        const offsetSegments: TranscriptSegment[] = part.segments.map((s) => ({
-          ...s,
-          start: Number((s.start + startSec).toFixed(2)),
-          end: Number((s.end + startSec).toFixed(2)),
-          words: s.words.map((w) => ({
+        // Re-offset chunk-local timestamps onto the full timeline, then drop
+        // words inside the overlap region (already covered by the previous
+        // chunk, which heard them without a cut).
+        const offsetWords: WordTimestamp[] = part.words
+          .map((w) => ({
             word: w.word,
-            start: Number((w.start + startSec).toFixed(2)),
-            end: Number((w.end + startSec).toFixed(2)),
-          })),
-        }));
+            start: Number((w.start + extractStart).toFixed(2)),
+            end: Number((w.end + extractStart).toFixed(2)),
+          }))
+          .filter((w) => i === 0 || w.start >= nominalStart - 0.15);
+        const offsetSegments: TranscriptSegment[] = part.segments
+          .map((s) => ({
+            ...s,
+            start: Number((s.start + extractStart).toFixed(2)),
+            end: Number((s.end + extractStart).toFixed(2)),
+            words: s.words.map((w) => ({
+              word: w.word,
+              start: Number((w.start + extractStart).toFixed(2)),
+              end: Number((w.end + extractStart).toFixed(2)),
+            })),
+          }))
+          .filter((s) => i === 0 || s.end >= nominalStart - 0.15);
         chunkResults.push({ ...part, words: offsetWords, segments: offsetSegments });
       } finally {
         try {

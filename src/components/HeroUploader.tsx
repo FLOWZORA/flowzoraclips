@@ -17,7 +17,7 @@ import {
   ChevronDown,
   X,
 } from 'lucide-react';
-import { CandidateClip, AspectRatio } from '@/lib/pipeline/types';
+import { CandidateClip, AspectRatio, SourceLanguage } from '@/lib/pipeline/types';
 import ClipVideoPreview from '@/components/ClipVideoPreview';
 // import CheckoutButton from '@/components/CheckoutButton';
 import SocialCopyModal from '@/components/SocialCopyModal';
@@ -32,7 +32,11 @@ interface NaiveClip {
 }
 
 export default function HeroUploader() {
-  const language = 'english';
+  // Spoken language of the source media. Drives the Whisper language hint +
+  // context prompt (matched vocabulary = fewer wrong words), filler-word
+  // detection, and Gemini scoring context. 'auto' lets Whisper detect per
+  // request and is the safest default when the language mix is unknown.
+  const [language, setLanguage] = useState<SourceLanguage>('auto');
   const scriptPreference = 'english';
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('9:16');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -460,6 +464,23 @@ export default function HeroUploader() {
 
           {/* Aspect Ratio Selector */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2.5 w-full lg:w-auto">
+            <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
+              <label className="text-[11px] font-mono text-[#A1A1A1] shrink-0">LANGUAGE:</label>
+              <div className="relative flex-1">
+                <select
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value as SourceLanguage)}
+                  className="w-full appearance-none rounded-md border border-[#262626] bg-[#111111] pl-2.5 pr-7 py-1.5 text-xs text-[#EDEDED] focus:outline-none focus:border-[#555555] transition-colors cursor-pointer min-h-[34px]"
+                  title="Spoken language of your video — matched transcription vocabulary means more accurate subtitles"
+                >
+                  <option value="auto" className="bg-[#111111] text-[#EDEDED]">Auto (Detect)</option>
+                  <option value="english" className="bg-[#111111] text-[#EDEDED]">English</option>
+                  <option value="hinglish" className="bg-[#111111] text-[#EDEDED]">Hinglish</option>
+                  <option value="hindi" className="bg-[#111111] text-[#EDEDED]">Hindi</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#A1A1A1]" />
+              </div>
+            </div>
             <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
               <label className="text-[11px] font-mono text-[#A1A1A1] shrink-0">RATIO:</label>
               <div className="relative flex-1">

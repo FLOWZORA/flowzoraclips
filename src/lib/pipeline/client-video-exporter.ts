@@ -153,8 +153,13 @@ export async function exportClipInBrowser(
         devanagari: String(w.devanagari || w.word || ''),
         relStart: Math.max(0, Number((rawS - off).toFixed(2))),
         relEnd: Math.max(0.12, Number((rawE - off).toFixed(2))),
+        // Unclamped end: words spoken entirely before the clip starts (e.g.
+        // after a trim/nudge moved startTime forward) must be excluded below
+        // instead of piling up at 0.0s with the wrong text.
+        _relEnd: Number((rawE - off).toFixed(2)),
       };
-    }).filter((w) => w.relStart <= duration + 0.5);
+    }).filter((w) => w._relEnd > 0.15 && w.relStart <= duration + 0.5)
+      .map(({ _relEnd, ...w }: any) => w);
 
   let mappedWords = mapWithOffset(offset);
 
