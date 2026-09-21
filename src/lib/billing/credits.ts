@@ -8,17 +8,18 @@ export const MAX_PAID_VIDEO_DURATION_SEC = 7200; // 120 minutes (2 hours) max pr
  * Hard ceiling imposed by the serverless runtime, not by any pricing plan.
  *
  * Audio is extracted locally with ffmpeg as 64kbps mono MP3 (~8 KB/s), so a
- * 120-min video yields ~55 MB of audio. Because Groq / OpenAI cap a single
- * transcription call at 25 MB, audio over that size is split into sequential
- * chunks and transcribed piece-by-piece with timestamps re-offset, then
- * concatenated — so sources up to ~120 minutes are supported.
+ * 180-min video yields ~82 MB of audio. Audio over Groq / OpenAI's 25 MB
+ * single-call limit is split into sequential chunks and transcribed
+ * piece-by-piece with timestamps re-offset, then concatenated. Videos over
+ * ~2 hours run as background jobs (Inngest) so sources up to ~180 minutes
+ * (3 hours) are supported.
  *
  * Duration is measured from the real container header (ffmpeg probe), never
  * guessed from file size. Raising this further requires a bigger runtime
  * budget (Vercel Pro allows 300s) or moving the pipeline behind an async
  * job queue.
  */
-export const MAX_SERVERLESS_DURATION_SEC = 7200; // 120 minutes
+export const MAX_SERVERLESS_DURATION_SEC = 10800; // 180 minutes (3 hours)
 
 export interface CreditEligibilityResult {
   allowed: boolean;
@@ -41,7 +42,7 @@ export async function validateProcessingEligibility(
     if (durationSeconds > MAX_SERVERLESS_DURATION_SEC) {
       return {
         allowed: false,
-        reason: `Video length (${Math.round(durationSeconds / 60)} min) exceeds the ${Math.round(MAX_SERVERLESS_DURATION_SEC / 60)}-minute processing limit. Longer videos cannot be processed in one run — trim the clip, or upload a shorter section (up to 120 minutes).`,
+        reason: `Video length (${Math.round(durationSeconds / 60)} min) exceeds the ${Math.round(MAX_SERVERLESS_DURATION_SEC / 60)}-minute processing limit. Longer videos cannot be processed in one run — trim the clip, or upload a shorter section (up to 3 hours).`,
         creditsRemaining: 999,
         plan: 'free_beta',
         isFreeTier: true,

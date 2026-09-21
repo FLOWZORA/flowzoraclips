@@ -76,13 +76,35 @@ export async function transcribeAudio(
   });
 }
 
-interface TranscribeCallConfig {
+export interface TranscribeCallConfig {
   apiKey: string;
   endpoint: string;
   model: string;
 }
 
-async function transcribeSingleChunk(
+/**
+ * Resolves which transcription backend (Groq free tier vs OpenAI) to call
+ * from the configured environment. Exported for the background job pipeline.
+ */
+export function resolveTranscriptionConfig(): TranscribeCallConfig {
+  const groqKey = process.env.GROQ_API_KEY;
+  const openaiKey = process.env.OPENAI_API_KEY;
+  const isGroq = Boolean(groqKey && !groqKey.includes('YourGroqApiKey'));
+  return {
+    apiKey: (isGroq ? groqKey : openaiKey) as string,
+    endpoint: isGroq
+      ? 'https://api.groq.com/openai/v1/audio/transcriptions'
+      : 'https://api.openai.com/v1/audio/transcriptions',
+    model: isGroq ? 'whisper-large-v3' : 'whisper-1',
+  };
+}
+
+/**
+ * Single Whisper API call (≤25 MB). Exported for the background job pipeline,
+ * which transcribes one audio chunk per step so each serverless invocation
+ * stays small. Prefer transcribeAudio() for one-shot use.
+ */
+export async function transcribeSingleChunk(
   audioBuffer: Buffer | Uint8Array,
   filename: string,
   language: SourceLanguage | undefined,
@@ -160,7 +182,7 @@ async function transcribeSingleChunk(
         const sizeMB = (audioBuffer.length / (1024 * 1024)).toFixed(1);
         throw new Error(
           `Your file (${sizeMB} MB) is too large for a single transcription request (25 MB limit). ` +
-          `Please use a video under ~120 minutes — larger files are transcribed in chunks automatically, otherwise try a smaller file.`
+          `Please use a video under ~3 hours — larger files are transcribed in chunks automatically, otherwise try a smaller file.`
         );
       }
       // For other errors (auth, rate limit, etc.), throw so caller can surface it
@@ -189,7 +211,7 @@ async function transcribeAudioInChunks(
   config: TranscribeCallConfig
 ): Promise<WhisperTranscriptionResult> {
   const CHUNK_TARGET_BYTES = 20 * 1024 * 1024;
-  const MAX_CHUNKS = 6; // 6 × 20 MB ≈ 120+ min at 64kbps
+  const MAX_CHUNKS = 10; // 10 × 20 MB ≈ 400 min at 64kbps — headroom past 180 min
   const BYTES_PER_SEC_64K = 8000; // 64kbps CBR mono MP3
 
   const totalBytes = audioBuffer.length;

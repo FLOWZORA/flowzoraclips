@@ -50,6 +50,73 @@ export function isVideoFile(filename: string): boolean {
   return ['.mp4','.mov','.avi','.mkv','.webm','.m4v','.wmv','.flv'].includes(ext);
 }
 
+export interface AudioChunk {
+  buffer: Buffer;
+  /** Nominal (non-overlapped) start of this chunk on the full timeline. */
+  startSec: number;
+  durationSec: number;
+}
+
+/**
+ * Splits an extracted MP3 audio buffer into sequential ≤chunkTargetBytes
+ * pieces for per-step background transcription. Every chunk after the first
+ * starts overlapSec early so chunk boundaries never slice a word in half —
+ * callers drop words inside the overlapped region from the later chunk.
+ */
+export async function splitAudioBufferIntoChunks(
+  audioBuffer: Buffer | Uint8Array,
+  opts?: { chunkTargetBytes?: number; maxChunks?: number; overlapSec?: number }
+): Promise<{ chunks: AudioChunk[]; estimatedTotalSec: number }> {
+  const chunkTargetBytes = opts?.chunkTargetBytes ?? 20 * 1024 * 1024;
+  const maxChunks = opts?.maxChunks ?? 10; // 10 × 20 MB ≈ 400 min at 64kbps
+  const overlapSec = opts?.overlapSec ?? 3;
+  const BYTES_PER_SEC_64K = 8000; // 64kbps CBR mono MP3
+
+  let ffmpegPath: string;
+  try {
+    ffmpegPath = getFfmpegPath();
+  } catch (e) {
+    throw new Error('FFmpeg not available for audio splitting.');
+  }
+
+  const totalBytes = audioBuffer.length;
+  const estimatedTotalSec = totalBytes / BYTES_PER_SEC_64K;
+  const numChunks = Math.min(maxChunks, Math.max(1, Math.ceil(totalBytes / chunkTargetBytes)));
+
+  const tmpDir = os.tmpdir();
+  const uid = 'flowzora_split_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+  const inPath = path.join(tmpDir, uid + '_in.mp3');
+  try {
+    fs.writeFileSync(inPath, audioBuffer as Buffer);
+    const chunks: AudioChunk[] = [];
+    for (let i = 0; i < numChunks; i++) {
+      const nominalStart = i * (estimatedTotalSec / numChunks);
+      const nominalEnd = i === numChunks - 1 ? estimatedTotalSec : (i + 1) * (estimatedTotalSec / numChunks);
+      const extractStart = i === 0 ? 0 : Math.max(0, nominalStart - overlapSec);
+      const durSec = Math.max(1, nominalEnd - extractStart);
+      const outPath = path.join(tmpDir, `${uid}_part${i}.mp3`);
+      try {
+        await execFileAsync(ffmpegPath, [
+          '-y', '-ss', String(Math.floor(extractStart)), '-i', inPath,
+          '-t', String(Math.ceil(durSec)),
+          '-acodec', 'libmp3lame', '-ab', '64k', '-ac', '1', '-ar', '16000',
+          outPath,
+        ]);
+        chunks.push({
+          buffer: fs.readFileSync(outPath),
+          startSec: nominalStart,
+          durationSec: nominalEnd - nominalStart,
+        });
+      } finally {
+        try { fs.unlinkSync(outPath); } catch (_) {}
+      }
+    }
+    return { chunks, estimatedTotalSec };
+  } finally {
+    try { fs.unlinkSync(inPath); } catch (_) {}
+  }
+}
+
 /**
  * Measures the true media duration in seconds by asking ffmpeg to parse the
  * container header (`ffmpeg -i` prints `Duration: HH:MM:SS.cs` to stderr).

@@ -29,12 +29,12 @@ async function resolveMeasuredDuration(
   const probedSec = await probeMediaDurationSec(sourceBuffer, originalFilename).catch(() => null);
   if (probedSec && Number.isFinite(probedSec) && probedSec > 0) {
     console.log(`[API] Duration for eligibility: ${Math.round(probedSec)}s (probed from container)`);
-    return Math.max(1, Math.min(7200, Math.round(probedSec)));
+    return Math.max(1, Math.min(10800, Math.round(probedSec)));
   }
   if (extractedAudio && extractedAudio.length > 0 && isVideoFile(originalFilename)) {
     const fromAudio = Math.round(extractedAudio.length / 8000);
     console.log(`[API] Duration for eligibility: ${fromAudio}s (fallback: 64kbps audio size)`);
-    return Math.max(1, Math.min(7200, fromAudio));
+    return Math.max(1, Math.min(10800, fromAudio));
   }
   const legacy = Math.max(30, Math.min(3600, Math.round((sourceBuffer.length / (1024 * 1024)) * 60)));
   console.log(`[API] Duration for eligibility: ${legacy}s (fallback: legacy size heuristic)`);

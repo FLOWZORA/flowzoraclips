@@ -46,7 +46,7 @@ export default function HeroUploader() {
   // Real media duration in seconds, probed from the file header (never guessed
   // from file size). Must stay in sync with MAX_SERVERLESS_DURATION_SEC in
   // src/lib/billing/credits.ts.
-  const MAX_VIDEO_DURATION_SEC = 7200; // 120 minutes
+  const MAX_VIDEO_DURATION_SEC = 10800; // 180 minutes (3 hours)
   const [sourceDurationSec, setSourceDurationSec] = useState<number | null>(null);
 
   React.useEffect(() => {
@@ -142,7 +142,7 @@ export default function HeroUploader() {
       // Fail fast on the REAL probed duration (not file size) before uploading.
       if (sourceDurationSec !== null && sourceDurationSec > MAX_VIDEO_DURATION_SEC) {
         setErrorMessage(
-          `Video length (${Math.round(sourceDurationSec / 60)} min) exceeds the ${Math.round(MAX_VIDEO_DURATION_SEC / 60)}-minute processing limit. Longer videos cannot be processed in one run — trim the clip, or upload a shorter section (up to 120 minutes).`
+          `Video length (${Math.round(sourceDurationSec / 60)} min) exceeds the ${Math.round(MAX_VIDEO_DURATION_SEC / 60)}-minute processing limit. Longer videos cannot be processed in one run — trim the clip, or upload a shorter section (up to 3 hours).`
         );
         setIsProcessing(false);
         return;
@@ -218,15 +218,24 @@ export default function HeroUploader() {
       }
 
       // STEP 2: Highlight Extraction Pipeline
-      setStatusMessage('Transcribing speech with word-level timestamps...');
-      setTimeout(() => setStatusMessage('Detecting filler words...'), 350);
-      setTimeout(() => setStatusMessage('Snapping windows to semantic sentence boundaries...'), 700);
-      setTimeout(() => setStatusMessage('Evaluating Hook, Coherence, Emotion & Trend via Gemini 2.5 Flash...'), 1100);
+      // Small files (<=4.5MB, sent inline) run synchronously. Anything uploaded
+      // to R2 goes through the background job queue so multi-hour videos never
+      // hit serverless timeouts — poll until the job completes.
+      const isQueuedFlow = Boolean(uploadedR2FileKey);
+      if (!isQueuedFlow) {
+        setStatusMessage('Transcribing speech with word-level timestamps...');
+        setTimeout(() => setStatusMessage('Detecting filler words...'), 350);
+        setTimeout(() => setStatusMessage('Snapping windows to semantic sentence boundaries...'), 700);
+        setTimeout(() => setStatusMessage('Evaluating Hook, Coherence, Emotion & Trend via Gemini 2.5 Flash...'), 1100);
+      } else {
+        setStatusMessage('Starting background processing job…');
+      }
 
       let res: Response;
       if (uploadedR2FileKey) {
-        // Send lightweight JSON referencing R2 object key — zero Vercel 4.5MB limit issue!
-        res = await fetch('/api/pipeline/analyze', {
+        // Enqueue a background job referencing the R2 object key — zero Vercel
+        // 4.5MB limit issue, no serverless timeout for long videos.
+        res = await fetch('/api/pipeline/jobs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -235,6 +244,10 @@ export default function HeroUploader() {
             language,
             scriptPreference,
             userId: activeUserId,
+            // Real probed duration so the enqueue gate enforces the true length.
+            ...(sourceDurationSec !== null
+              ? { estimatedDurationSec: Math.round(sourceDurationSec) }
+              : {}),
           }),
         });
       } else {
@@ -271,6 +284,55 @@ export default function HeroUploader() {
           setRequiresTopup(true);
         }
         return;
+      }
+
+      // Background job path: poll until completed (up to ~90 min for 3h videos).
+      if (json.queued && json.jobId) {
+        const jobId = json.jobId as string;
+        const POLL_INTERVAL_MS = 5000;
+        const MAX_POLLS = 1080; // ~90 minutes
+        for (let attempt = 0; attempt < MAX_POLLS; attempt++) {
+          await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+          let pollRes: Response;
+          try {
+            pollRes = await fetch(`/api/pipeline/jobs/${encodeURIComponent(jobId)}`);
+          } catch {
+            continue; // transient network blip — keep polling
+          }
+          const pollText = await pollRes.text();
+          let pollJson: any = null;
+          try {
+            pollJson = JSON.parse(pollText);
+          } catch {
+            continue;
+          }
+          if (!pollRes.ok || pollJson.success === false) {
+            const jobFailed = pollJson?.job?.status === 'failed';
+            const msg = pollJson.error || 'Background processing failed';
+            setErrorMessage(jobFailed ? msg : `${msg} (job ${jobId})`);
+            if (msg.toLowerCase().includes('top-up') || msg.toLowerCase().includes('credits')) {
+              setRequiresTopup(true);
+            }
+            setIsProcessing(false);
+            return;
+          }
+          const job = pollJson.job;
+          if (job) {
+            const pct = typeof job.progress === 'number' ? ` (${job.progress}%)` : '';
+            setStatusMessage(`${job.stageDetail || 'Processing in background…'}${pct}`);
+          }
+          if (pollJson.data) {
+            json = pollJson;
+            break;
+          }
+        }
+        if (!json.data) {
+          setErrorMessage(
+            `Still processing in the background after ~90 minutes (job ${jobId}). Your upload is saved — please check back and re-run processing later.`
+          );
+          setIsProcessing(false);
+          return;
+        }
       }
 
       if (json.success && json.data) {

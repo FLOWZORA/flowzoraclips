@@ -196,8 +196,11 @@ export function calculateCompositeScore(d: ScoreDimensions): number {
 /**
  * High-fidelity heuristic scoring engine based on linguistic patterns,
  * question markers, numbers, emotional keywords, and speech pace.
+ *
+ * Exported so the background job pipeline can pre-filter the hundreds of
+ * candidates a multi-hour video produces down to a Gemini-scorable set.
  */
-function calculateHeuristicScore(candidate: CandidateWindow): CandidateScore {
+export function calculateHeuristicScore(candidate: CandidateWindow): CandidateScore {
   const text = candidate.text.toLowerCase();
   const first = candidate.firstSentence.toLowerCase();
   const last = candidate.lastSentence.toLowerCase();
