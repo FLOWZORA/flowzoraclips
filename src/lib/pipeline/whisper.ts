@@ -1,4 +1,19 @@
 import { TranscriptSegment, WordTimestamp, SourceLanguage } from './types';
+import path from 'path';
+import os from 'os';
+import fs from 'fs';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import { createRequire } from 'module';
+
+const execFileAsync = promisify(execFile);
+
+function getFfmpegPath(): string {
+  const require = createRequire(import.meta.url);
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const installer = require('@ffmpeg-installer/ffmpeg');
+  return installer.path as string;
+}
 
 export interface WhisperTranscriptionResult {
   text: string;
@@ -41,16 +56,40 @@ export async function transcribeAudio(
     );
   }
 
-  // Groq / OpenAI Whisper limit is 25 MB.
+  // Groq / OpenAI Whisper limit is 25 MB per request. Audio over that size
+  // (e.g. a 58-min 64kbps MP3 is ~28 MB, 120 min is ~55 MB) is split into
+  // sequential <20 MB chunks, transcribed piece-by-piece, and concatenated
+  // with timestamps re-offset — supporting videos up to ~120 minutes.
   const GROQ_MAX_BYTES = 25 * 1024 * 1024;
-  if (isGroq && audioBuffer.length > GROQ_MAX_BYTES) {
-    const sizeMB = (audioBuffer.length / (1024 * 1024)).toFixed(1);
-    throw new Error(
-      `Your file is ${sizeMB} MB, which exceeds Groq's 25 MB audio limit. ` +
-      `Please compress your video to a smaller file or trim it to under ~25 minutes before uploading.`
-    );
+  if (audioBuffer.length > GROQ_MAX_BYTES) {
+    return transcribeAudioInChunks(audioBuffer, filename, language, {
+      apiKey: apiKey as string,
+      endpoint,
+      model,
+    });
   }
 
+  return transcribeSingleChunk(audioBuffer, filename, language, {
+    apiKey: apiKey as string,
+    endpoint,
+    model,
+  });
+}
+
+interface TranscribeCallConfig {
+  apiKey: string;
+  endpoint: string;
+  model: string;
+}
+
+async function transcribeSingleChunk(
+  audioBuffer: Buffer | Uint8Array,
+  filename: string,
+  language: SourceLanguage | undefined,
+  config: TranscribeCallConfig
+): Promise<WhisperTranscriptionResult> {
+  const { apiKey, endpoint, model } = config;
+  const isGroq = endpoint.includes('groq');
   try {
     const lowerName = filename.toLowerCase();
     // Map file extension to the MIME type Groq/OpenAI accept for audio
@@ -103,8 +142,8 @@ export async function transcribeAudio(
       if (response.status === 413) {
         const sizeMB = (audioBuffer.length / (1024 * 1024)).toFixed(1);
         throw new Error(
-          `Your file (${sizeMB} MB) is too large for the transcription API (25 MB limit). ` +
-          `Please upload a smaller file or use a video under ~30 minutes.`
+          `Your file (${sizeMB} MB) is too large for a single transcription request (25 MB limit). ` +
+          `Please use a video under ~120 minutes — larger files are transcribed in chunks automatically, otherwise try a smaller file.`
         );
       }
       // For other errors (auth, rate limit, etc.), throw so caller can surface it
@@ -117,6 +156,129 @@ export async function transcribeAudio(
   } catch (err: any) {
     // Re-throw all errors so the pipeline surfaces them to the user
     throw err;
+  }
+}
+
+/**
+ * Transcribe audio larger than the 25 MB single-request limit by splitting it
+ * into sequential ffmpeg chunks (~20 MB each at 64kbps ≈ 42 min), transcribing
+ * each piece, and concatenating with timestamps re-offset to the full timeline.
+ * Supports sources up to ~120 minutes (up to 4 chunks).
+ */
+async function transcribeAudioInChunks(
+  audioBuffer: Buffer | Uint8Array,
+  filename: string,
+  language: SourceLanguage | undefined,
+  config: TranscribeCallConfig
+): Promise<WhisperTranscriptionResult> {
+  const CHUNK_TARGET_BYTES = 20 * 1024 * 1024;
+  const MAX_CHUNKS = 6; // 6 × 20 MB ≈ 120+ min at 64kbps
+  const BYTES_PER_SEC_64K = 8000; // 64kbps CBR mono MP3
+
+  const totalBytes = audioBuffer.length;
+  const estimatedTotalSec = totalBytes / BYTES_PER_SEC_64K;
+  const numChunks = Math.min(
+    MAX_CHUNKS,
+    Math.max(2, Math.ceil(totalBytes / CHUNK_TARGET_BYTES))
+  );
+  const chunkDurationSec = estimatedTotalSec / numChunks;
+
+  let ffmpegPath: string;
+  try {
+    ffmpegPath = getFfmpegPath();
+  } catch {
+    const sizeMB = (totalBytes / (1024 * 1024)).toFixed(1);
+    throw new Error(
+      `Your file is ${sizeMB} MB, which exceeds the 25 MB single-request transcription limit, and audio splitting (ffmpeg) is unavailable. ` +
+        `Please trim the video to under ~50 minutes and try again.`
+    );
+  }
+
+  const tmpDir = os.tmpdir();
+  const uid = `flowzora_chunk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const inPath = path.join(tmpDir, `${uid}_in.mp3`);
+  console.log(
+    `[Whisper] Audio ${(totalBytes / (1024 * 1024)).toFixed(1)} MB exceeds 25 MB limit — splitting into ${numChunks} chunks (~${Math.round(chunkDurationSec)}s each) for sequential transcription...`
+  );
+  try {
+    fs.writeFileSync(inPath, audioBuffer as Buffer);
+    const chunkResults: WhisperTranscriptionResult[] = [];
+    for (let i = 0; i < numChunks; i++) {
+      const startSec = i * chunkDurationSec;
+      // Last chunk takes the remainder so no audio is dropped to rounding.
+      const durSec =
+        i === numChunks - 1 ? Math.max(1, estimatedTotalSec - startSec) : chunkDurationSec;
+      const outPath = path.join(tmpDir, `${uid}_part${i}.mp3`);
+      try {
+        await execFileAsync(ffmpegPath, [
+          '-y',
+          '-ss',
+          String(Math.floor(startSec)),
+          '-i',
+          inPath,
+          '-t',
+          String(Math.ceil(durSec)),
+          '-acodec',
+          'libmp3lame',
+          '-ab',
+          '64k',
+          '-ac',
+          '1',
+          '-ar',
+          '16000',
+          outPath,
+        ]);
+        const partBuffer = fs.readFileSync(outPath);
+        console.log(
+          `[Whisper] Transcribing chunk ${i + 1}/${numChunks} (${(partBuffer.length / (1024 * 1024)).toFixed(1)} MB, offset ${Math.round(startSec)}s)...`
+        );
+        const part = await transcribeSingleChunk(partBuffer, filename, language, config);
+        // Re-offset chunk-local timestamps onto the full timeline.
+        const offsetWords: WordTimestamp[] = part.words.map((w) => ({
+          word: w.word,
+          start: Number((w.start + startSec).toFixed(2)),
+          end: Number((w.end + startSec).toFixed(2)),
+        }));
+        const offsetSegments: TranscriptSegment[] = part.segments.map((s) => ({
+          ...s,
+          start: Number((s.start + startSec).toFixed(2)),
+          end: Number((s.end + startSec).toFixed(2)),
+          words: s.words.map((w) => ({
+            word: w.word,
+            start: Number((w.start + startSec).toFixed(2)),
+            end: Number((w.end + startSec).toFixed(2)),
+          })),
+        }));
+        chunkResults.push({ ...part, words: offsetWords, segments: offsetSegments });
+      } finally {
+        try {
+          fs.unlinkSync(outPath);
+        } catch {}
+      }
+    }
+
+    // Concatenate in order and re-index segments.
+    const allWords = chunkResults.flatMap((r) => r.words);
+    const allSegments: TranscriptSegment[] = chunkResults.flatMap((r) => r.segments).map(
+      (s, idx) => ({ ...s, id: `seg-${idx}` })
+    );
+    const fullText = chunkResults.map((r) => r.text).join(' ').trim();
+    const duration =
+      allWords.length > 0 ? Number(allWords[allWords.length - 1].end.toFixed(2)) : estimatedTotalSec;
+    console.log(
+      `[Whisper] Chunked transcription complete: ${numChunks} chunks, ${allWords.length} words, ${duration.toFixed(1)}s`
+    );
+    return {
+      text: fullText,
+      language: chunkResults[0]?.language || 'en',
+      duration,
+      segments: allSegments,
+      words: allWords,
+    };
+  } finally {
+    try {
+      fs.unlinkSync(inPath);
+    } catch {}
   }
 }
 

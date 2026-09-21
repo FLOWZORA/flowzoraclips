@@ -10,6 +10,10 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 
+// Long-form sources (up to ~120 min) transcribe in sequential ~20 MB chunks,
+// so allow the maximum function runtime on Pro (Hobby caps at 60s regardless).
+export const maxDuration = 300;
+
 /**
  * Resolves the media duration used for the eligibility gate.
  * Prefers a real ffmpeg probe of the container; falls back to the extracted

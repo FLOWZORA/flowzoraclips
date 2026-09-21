@@ -7,17 +7,18 @@ export const MAX_PAID_VIDEO_DURATION_SEC = 7200; // 120 minutes (2 hours) max pr
 /**
  * Hard ceiling imposed by the serverless runtime, not by any pricing plan.
  *
- * Vercel Hobby caps a function at 60s. Direct file uploads extract audio with
- * local ffmpeg (seconds) and transcribe via Groq Whisper (fast, free), so
- * sources up to ~30 minutes comfortably fit: a 30-min video yields ~14 MB of
- * 64kbps MP3, well under Groq's 25 MB single-call limit (~52 min of audio).
+ * Audio is extracted locally with ffmpeg as 64kbps mono MP3 (~8 KB/s), so a
+ * 120-min video yields ~55 MB of audio. Because Groq / OpenAI cap a single
+ * transcription call at 25 MB, audio over that size is split into sequential
+ * chunks and transcribed piece-by-piece with timestamps re-offset, then
+ * concatenated — so sources up to ~120 minutes are supported.
  *
  * Duration is measured from the real container header (ffmpeg probe), never
  * guessed from file size. Raising this further requires a bigger runtime
  * budget (Vercel Pro allows 300s) or moving the pipeline behind an async
  * job queue.
  */
-export const MAX_SERVERLESS_DURATION_SEC = 1800; // 30 minutes
+export const MAX_SERVERLESS_DURATION_SEC = 7200; // 120 minutes
 
 export interface CreditEligibilityResult {
   allowed: boolean;
@@ -40,7 +41,7 @@ export async function validateProcessingEligibility(
     if (durationSeconds > MAX_SERVERLESS_DURATION_SEC) {
       return {
         allowed: false,
-        reason: `Video length (${Math.round(durationSeconds / 60)} min) exceeds the ${Math.round(MAX_SERVERLESS_DURATION_SEC / 60)}-minute processing limit. Longer videos cannot finish inside the serverless time budget — trim the clip, or upload a shorter section.`,
+        reason: `Video length (${Math.round(durationSeconds / 60)} min) exceeds the ${Math.round(MAX_SERVERLESS_DURATION_SEC / 60)}-minute processing limit. Longer videos cannot be processed in one run — trim the clip, or upload a shorter section (up to 120 minutes).`,
         creditsRemaining: 999,
         plan: 'free_beta',
         isFreeTier: true,

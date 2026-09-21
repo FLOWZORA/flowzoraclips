@@ -42,7 +42,7 @@ export default function HeroUploader() {
   // Real media duration in seconds, probed from the file header (never guessed
   // from file size). Must stay in sync with MAX_SERVERLESS_DURATION_SEC in
   // src/lib/billing/credits.ts.
-  const MAX_VIDEO_DURATION_SEC = 1800; // 30 minutes
+  const MAX_VIDEO_DURATION_SEC = 7200; // 120 minutes
   const [sourceDurationSec, setSourceDurationSec] = useState<number | null>(null);
 
   React.useEffect(() => {
@@ -138,7 +138,7 @@ export default function HeroUploader() {
       // Fail fast on the REAL probed duration (not file size) before uploading.
       if (sourceDurationSec !== null && sourceDurationSec > MAX_VIDEO_DURATION_SEC) {
         setErrorMessage(
-          `Video length (${Math.round(sourceDurationSec / 60)} min) exceeds the ${Math.round(MAX_VIDEO_DURATION_SEC / 60)}-minute processing limit. Longer videos cannot finish inside the serverless time budget — trim the clip, or upload a shorter section.`
+          `Video length (${Math.round(sourceDurationSec / 60)} min) exceeds the ${Math.round(MAX_VIDEO_DURATION_SEC / 60)}-minute processing limit. Longer videos cannot be processed in one run — trim the clip, or upload a shorter section (up to 120 minutes).`
         );
         setIsProcessing(false);
         return;
