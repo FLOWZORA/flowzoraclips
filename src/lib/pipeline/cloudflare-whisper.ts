@@ -16,14 +16,38 @@ const CF_API_BASE = 'https://api.cloudflare.com/client/v4';
  * tier: 10,000 neurons/day ≈ one 3-hour video/day, no card required).
  *
  * Env: CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN,
- *   optional CLOUDFLARE_WHISPER_MODEL (default @cf/openai/whisper-large-v3-turbo).
+ *   optional CLOUDFLARE_WHISPER_MODEL (default @cf/openai/whisper).
  */
 export function isCloudflareWhisperConfigured(): boolean {
-  return Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN);
+  return Boolean(process.env.CLOUDFLARE_ACCOUNT_ID?.trim() && process.env.CLOUDFLARE_API_TOKEN?.trim());
 }
 
 function getModel(): string {
-  return process.env.CLOUDFLARE_WHISPER_MODEL || '@cf/openai/whisper-large-v3-turbo';
+  return (process.env.CLOUDFLARE_WHISPER_MODEL || '@cf/openai/whisper').trim();
+}
+
+/**
+ * Trimmed Account ID with format validation. Cloudflare answers a wrong or
+ * whitespace-padded Account ID with HTTP 400 code 7000 ("No route for that
+ * URI"), which is cryptic — fail fast with a clear config error instead.
+ * (Account IDs are 32 hex chars; a Zone ID pasted here will not route.)
+ */
+function getAccountId(): string {
+  const id = (process.env.CLOUDFLARE_ACCOUNT_ID || '').trim();
+  if (!/^[a-f0-9]{32}$/i.test(id)) {
+    throw new Error(
+      'Cloudflare Workers AI account ID looks invalid (expected the 32-character hex Account ID from the Cloudflare dashboard overview page, not a Zone ID). Check CLOUDFLARE_ACCOUNT_ID.'
+    );
+  }
+  return id;
+}
+
+function getApiToken(): string {
+  const token = (process.env.CLOUDFLARE_API_TOKEN || '').trim();
+  if (!token) {
+    throw new Error('Cloudflare Workers AI is not configured (CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN).');
+  }
+  return token;
 }
 
 /**
@@ -40,13 +64,10 @@ export async function transcribeWithCloudflare(
   audioBuffer: Buffer | Uint8Array,
   language?: SourceLanguage
 ): Promise<CloudflareTranscriptionResult> {
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
-  if (!accountId || !apiToken) {
-    throw new Error('Cloudflare Workers AI is not configured (CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN).');
-  }
+  const accountId = getAccountId();
+  const apiToken = getApiToken();
   const model = getModel();
-  console.log(`[CF Whisper] Model: ${model}`);
+  console.log(`[CF Whisper] Model: ${model} (acct …${accountId.slice(-4)})`);
 
   // Split large buffers so every request stays small; tiny inputs go direct.
   let pieces: Array<{ buffer: Buffer; startSec: number }> = [
@@ -180,8 +201,15 @@ async function postAudio(
   const data: any = await res.json().catch(() => ({}));
   if (!res.ok || data.success === false) {
     const errors = (data.errors || []).map((e: any) => e.message || JSON.stringify(e)).join('; ');
+    const codes = (data.errors || []).map((e: any) => e.code).filter(Boolean);
+    const codeStr = codes.length ? ` [${codes.join(',')}]` : '';
+    // Code 7000 "No route for that URI" = request never routed: wrong
+    // CLOUDFLARE_ACCOUNT_ID or model slug (never an audio problem).
+    const hint = codes.includes(7000)
+      ? ' (routing failed — check CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_WHISPER_MODEL)'
+      : '';
     throw new Error(
-      `Cloudflare Workers AI error (${res.status}): ${errors || res.statusText || 'request failed'}`
+      `Cloudflare Workers AI error (${res.status})${codeStr}: ${errors || res.statusText || 'request failed'}${hint}`
     );
   }
 

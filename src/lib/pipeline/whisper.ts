@@ -263,6 +263,17 @@ export async function transcribeSingleChunk(
           `Please use a video under ~3 hours — larger files are transcribed in chunks automatically, otherwise try a smaller file.`
         );
       }
+      // Groq free-tier daily audio quota (ASPD: 28,800 audio-sec/day) exhausted.
+      // Surface a human message with Groq's own retry hint instead of raw JSON.
+      if (response.status === 429 || /rate_limit_exceeded|rate limit reached/i.test(errorText)) {
+        const retryMatch = /try again in ([^.]+?)\./i.exec(errorText);
+        const retryHint = retryMatch
+          ? ` Please try again in ~${retryMatch[1].trim()}.`
+          : ' Please try again after the daily quota resets.';
+        throw new Error(
+          `Backup transcription daily quota exhausted (Groq free tier allows ~8 hours of audio per day).${retryHint} Your credit is refunded automatically on failure.`
+        );
+      }
       // For other errors (auth, rate limit, etc.), throw so caller can surface it
       throw new Error(`Transcription API error (${response.status}): ${errorText}`);
     }
