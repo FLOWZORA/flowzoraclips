@@ -28,11 +28,13 @@ function getModel(): string {
 
 /**
  * Buffers over this size are sub-chunked before calling Workers AI — the API
- * rejects ~10 MB audio payloads (413 Request too large), so ~4 MB pieces
- * (≈8.5 min at 64kbps) stay safely inside the limit. Timestamps are
- * re-offset on merge.
+ * rejects multi-MB audio payloads (413 Request too large), while Cloudflare's
+ * own Whisper tutorial uses ~1 MB chunks. 1 MB ≈ 2 min at 64kbps.
+ * Timestamps are re-offset on merge.
  */
-const CF_SUBCHUNK_BYTES = 4 * 1024 * 1024;
+const CF_SUBCHUNK_BYTES = 1 * 1024 * 1024;
+/** Parallel sub-requests per transcription call (bounds step runtime). */
+const CF_CONCURRENCY = 3;
 
 export async function transcribeWithCloudflare(
   audioBuffer: Buffer | Uint8Array,
@@ -51,7 +53,7 @@ export async function transcribeWithCloudflare(
   if (audioBuffer.length > CF_SUBCHUNK_BYTES) {
     const { chunks } = await splitAudioBufferIntoChunks(audioBuffer, {
       chunkTargetBytes: CF_SUBCHUNK_BYTES,
-      maxChunks: 50, // 50 × 4 MB ≈ 400+ min at 64kbps
+      maxChunks: 500, // 500 × 1 MB ≈ 1000 min at 64kbps — headroom past 180 min
       overlapSec: 3,
     });
     pieces = chunks.map((c) => ({ buffer: c.buffer, startSec: c.startSec }));
@@ -65,14 +67,30 @@ export async function transcribeWithCloudflare(
   // Chunks carry a 3s head overlap (see splitAudioBufferIntoChunks), so local
   // timestamps are relative to extractStart, not the nominal start — same
   // re-offset + overlap-drop rule as the Groq chunk path.
+  //
+  // Sub-requests run with bounded concurrency: a 20 MB pipeline chunk fans out
+  // to ~20 one-MB calls, which would blow the 300s step budget sequentially.
   const OVERLAP_SEC = 3;
+  const partResults = new Array<{ text: string; words: CfWord[] }>(pieces.length);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < pieces.length) {
+      const idx = nextIndex;
+      nextIndex += 1;
+      const { buffer } = pieces[idx];
+      console.log(
+        `[CF Whisper] Transcribing part ${idx + 1}/${pieces.length} (${(buffer.length / 1024).toFixed(0)} KB)...`
+      );
+      partResults[idx] = await transcribeOneRequest(buffer, accountId, apiToken);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(CF_CONCURRENCY, pieces.length) }, () => worker())
+  );
   for (let i = 0; i < pieces.length; i++) {
-    const { buffer, startSec: nominalStart } = pieces[i];
+    const nominalStart = pieces[i].startSec;
     const extractStart = i === 0 ? 0 : Math.max(0, nominalStart - OVERLAP_SEC);
-    console.log(
-      `[CF Whisper] Transcribing part ${i + 1}/${pieces.length} (${(buffer.length / 1024).toFixed(0)} KB)...`
-    );
-    const part = await transcribeOneRequest(buffer, accountId, apiToken);
+    const part = partResults[i];
     texts.push(part.text);
     for (const w of part.words) {
       const absStart = Number((w.start + extractStart).toFixed(2));
