@@ -149,6 +149,16 @@ export async function transcribeSingleChunk(
     if (isCloudflareWhisperConfigured()) {
       try {
         const cf = await transcribeWithCloudflare(audioBuffer, language);
+        // The default Workers AI Whisper model returns plain text with no
+        // word-level timestamps — but candidates, captions, and exports all
+        // key off word times. Treat a wordless result as a primary failure
+        // so the Groq/OpenAI backup (verbose_json with timestamps) takes
+        // over below, instead of a silent "0 words / 0 highlights" success.
+        if (!cf.words || cf.words.length === 0) {
+          throw new Error(
+            'Cloudflare Workers AI returned text without word-level timestamps, which highlight extraction requires.'
+          );
+        }
         console.log(
           `[Whisper] Transcribed via Cloudflare Workers AI. Words: ${cf.words.length}, Duration: ${cf.duration.toFixed(1)}s`
         );
@@ -280,7 +290,15 @@ export async function transcribeSingleChunk(
 
     const data = await response.json();
     console.log(`[Whisper API] Transcription completed via ${backupLabel} backup (${isGroq ? 'Groq Whisper Large v3' : 'OpenAI'}). Words: ${data.words?.length || 0}, Duration: ${data.duration?.toFixed(1)}s`);
-    return { ...parseWhisperVerboseResponse(data), provider: (isGroq ? 'groq' : 'openai') as TranscriptionProvider };
+    const backup = { ...parseWhisperVerboseResponse(data), provider: (isGroq ? 'groq' : 'openai') as TranscriptionProvider };
+    // Never return a silent empty transcript — downstream would burn a credit
+    // and show "0 words / 0 highlights". Fail loudly so credit is refunded.
+    if (!backup.words || backup.words.length === 0) {
+      throw new Error(
+        `Backup transcription returned no words for this audio (empty transcript). Please try a different file — your credit is refunded automatically on failure.`
+      );
+    }
+    return backup;
   } catch (err: any) {
     // If Cloudflare (primary) already failed and the fallback just died too,
     // name both causes — otherwise only the fallback error is visible and the

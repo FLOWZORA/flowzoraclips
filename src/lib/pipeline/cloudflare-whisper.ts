@@ -16,14 +16,14 @@ const CF_API_BASE = 'https://api.cloudflare.com/client/v4';
  * tier: 10,000 neurons/day ≈ one 3-hour video/day, no card required).
  *
  * Env: CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN,
- *   optional CLOUDFLARE_WHISPER_MODEL (default @cf/openai/whisper).
+ *   optional CLOUDFLARE_WHISPER_MODEL (default @cf/openai/whisper-large-v3-turbo).
  */
 export function isCloudflareWhisperConfigured(): boolean {
   return Boolean(process.env.CLOUDFLARE_ACCOUNT_ID?.trim() && process.env.CLOUDFLARE_API_TOKEN?.trim());
 }
 
 function getModel(): string {
-  return (process.env.CLOUDFLARE_WHISPER_MODEL || '@cf/openai/whisper').trim();
+  return (process.env.CLOUDFLARE_WHISPER_MODEL || '@cf/openai/whisper-large-v3-turbo').trim();
 }
 
 /**
@@ -226,7 +226,40 @@ async function postAudio(
     })
     .filter((w): w is CfWord => Boolean(w && w.word));
 
-  return { text: String(result.text || ''), words };
+  // Turbo returns timed `segments` (start/end/text) even when the `words`
+  // array is absent — derive approximate word timestamps by distributing
+  // each segment's words evenly across its (model-produced) time range.
+  // Segment boundaries stay exact; only intra-segment splits are
+  // interpolated. Far better than zero words; Groq backup stays the
+  // precise-timestamp path when quota allows.
+  let text = String(result.text || '');
+  if (words.length === 0 && Array.isArray(result.segments)) {
+    let segCount = 0;
+    for (const s of result.segments) {
+      const start = Number(s?.start);
+      const end = Number(s?.end);
+      const segText = String(s?.text || '').trim();
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !segText) continue;
+      const tokens = segText.split(/\s+/).filter(Boolean);
+      if (tokens.length === 0) continue;
+      segCount += 1;
+      const per = (end - start) / tokens.length;
+      tokens.forEach((tok, i) => {
+        const wStart = Number((start + i * per).toFixed(2));
+        let wEnd = Number((start + (i + 1) * per).toFixed(2));
+        if (wEnd - wStart > 2.0) wEnd = Number((wStart + 1.2).toFixed(2));
+        words.push({ word: tok, start: wStart, end: wEnd });
+      });
+    }
+    if (!text.trim() && words.length > 0) {
+      text = words.map((w) => w.word).join(' ');
+    }
+    if (words.length > 0) {
+      console.log(`[CF Whisper] Derived ${words.length} word timestamps from ${segCount} timed segments.`);
+    }
+  }
+
+  return { text, words };
 }
 
 /**
