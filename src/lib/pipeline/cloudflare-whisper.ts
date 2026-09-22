@@ -127,17 +127,50 @@ async function transcribeOneRequest(
   apiToken: string
 ): Promise<{ text: string; words: CfWord[] }> {
   const model = getModel();
-  const res = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/ai/run/${model}`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-        'Content-Type': 'audio/mpeg',
-      },
-      body: buffer as any,
+  const url = `${CF_API_BASE}/accounts/${accountId}/ai/run/${model}`;
+
+  // Attempt 1: raw binary, model auto-detects the language (best quality).
+  try {
+    return await postAudio(url, apiToken, buffer);
+  } catch (err: any) {
+    // The model refuses chunks where it hears multiple languages and asks
+    // for a forced single language — retry English, then Hindi.
+    if (!isMixedLanguageError(err)) throw err;
+    console.warn(`[CF Whisper] Mixed-language chunk detected, retrying with forced language…`);
+    try {
+      return await postAudio(url, apiToken, buffer, 'en');
+    } catch (enErr: any) {
+      if (!isMixedLanguageError(enErr)) throw enErr;
+      return await postAudio(url, apiToken, buffer, 'hi');
     }
-  );
+  }
+}
+
+function isMixedLanguageError(err: any): boolean {
+  return /different languages|force a single language/i.test(err?.message || '');
+}
+
+/**
+ * Sends one audio piece to Workers AI. Without a language this is a compact
+ * binary upload; with a language it becomes a JSON {audio, language} body.
+ */
+async function postAudio(
+  url: string,
+  apiToken: string,
+  buffer: Buffer,
+  language?: string
+): Promise<{ text: string; words: CfWord[] }> {
+  const isJson = Boolean(language);
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+      'Content-Type': isJson ? 'application/json' : 'audio/mpeg',
+    },
+    body: isJson
+      ? JSON.stringify({ audio: Array.from(buffer.values()), language })
+      : (buffer as any),
+  });
 
   const data: any = await res.json().catch(() => ({}));
   if (!res.ok || data.success === false) {
