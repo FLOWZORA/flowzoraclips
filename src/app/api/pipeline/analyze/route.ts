@@ -232,10 +232,13 @@ export async function POST(req: NextRequest) {
     }
 
     // 7. Record actual accrued AI cost to spend ledger
-    // Groq Whisper Large v3 is 100% free ($0.00/min); OpenAI Whisper is $0.006/min
+    // Cloudflare Whisper (primary) and Groq Whisper (backup) are 100% free
+    // ($0.00/min); only the OpenAI backup is $0.006/min.
     const durationMinutes = (result.duration || 60) / 60;
-    const isGroq = Boolean(process.env.GROQ_API_KEY && !process.env.GROQ_API_KEY.includes('YourGroqApiKey'));
-    const transcriptionRate = isGroq ? 0.000 : 0.006;
+    const usesPaidBackup =
+      (result.transcriptionProvider === 'openai' || result.transcriptionProvider === 'mixed') &&
+      !Boolean(process.env.GROQ_API_KEY && !process.env.GROQ_API_KEY.includes('YourGroqApiKey'));
+    const transcriptionRate = usesPaidBackup ? 0.006 : 0.000;
     const estimatedCostUsd = Number((durationMinutes * transcriptionRate + 0.0005).toFixed(4));
     await recordApiSpend(estimatedCostUsd);
 

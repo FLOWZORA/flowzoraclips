@@ -10,8 +10,10 @@ import {
 import {
   transcribeSingleChunk,
   resolveTranscriptionConfig,
+  TranscriptionProvider,
   WhisperTranscriptionResult,
 } from '@/lib/pipeline/whisper';
+import { isCloudflareWhisperConfigured } from '@/lib/pipeline/cloudflare-whisper';
 import { detectAndAnnotateFillers } from '@/lib/pipeline/filler-detect';
 import { generateCandidateSegments, CandidateWindow } from '@/lib/pipeline/candidate-generator';
 import {
@@ -123,10 +125,13 @@ async function runProcessVideo(
     });
 
     // ---- Steps 2..N: transcribe one chunk per step (sequential, durable) ----
+    // Strict order: Cloudflare Workers AI first per chunk, Groq/OpenAI only
+    // as backup when Cloudflare fails. resolveTranscriptionConfig describes
+    // the backup only (null when Cloudflare-only mode).
     const config = resolveTranscriptionConfig();
-    if (!config.apiKey) {
+    if (!config.apiKey && !isCloudflareWhisperConfigured()) {
       throw new Error(
-        'Transcription API key is not configured. Please set GROQ_API_KEY (free) or OPENAI_API_KEY.'
+        'Transcription is not configured. Please set CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN (primary) and optionally GROQ_API_KEY (free backup) or OPENAI_API_KEY.'
       );
     }
     const numChunks = prep.chunkKeys.length;
@@ -183,12 +188,18 @@ async function runProcessVideo(
         allWords.length > 0
           ? Number(allWords[allWords.length - 1].end.toFixed(2))
           : prep.durationSec;
+      // Preserve which backend actually ran: unanimous → that provider
+      // (usually cloudflare), otherwise the backup fired on some chunks.
+      const providerSet = new Set(chunkResults.map((r) => r.provider || 'cloudflare'));
+      const provider: TranscriptionProvider =
+        providerSet.size === 1 ? ([...providerSet][0] as TranscriptionProvider) : 'mixed';
       const transcription: WhisperTranscriptionResult = {
         text: fullText,
         language: chunkResults[0]?.language || 'en',
         duration,
         segments: allSegments,
         words: allWords,
+        provider,
       };
 
       const fillerReport = detectAndAnnotateFillers(allWords, language);
@@ -266,7 +277,7 @@ async function runProcessVideo(
         language,
         scriptPreference,
         transcription,
-        transcriptionProvider: transcription.provider || 'groq',
+        transcriptionProvider: transcription.provider || 'cloudflare',
         fillerReport,
         candidatesGenerated: candidates.length,
         rankedResult,
@@ -275,11 +286,15 @@ async function runProcessVideo(
       const resultKey = `jobs/${jobId}/result.json`;
       await uploadBufferToR2(resultKey, Buffer.from(JSON.stringify(result), 'utf-8'), 'application/json');
 
-      const isGroq = Boolean(
-        process.env.GROQ_API_KEY && !process.env.GROQ_API_KEY.includes('YourGroqApiKey')
-      );
+      // Cloudflare Whisper (primary) and Groq Whisper (backup) are both free
+      // ($0.00/min); only the OpenAI backup incurs $0.006/min.
+      const usesPaidBackup =
+        (transcription.provider === 'openai' || transcription.provider === 'mixed') &&
+        !Boolean(
+          process.env.GROQ_API_KEY && !process.env.GROQ_API_KEY.includes('YourGroqApiKey')
+        );
       const durationMinutes = (transcription.duration || 60) / 60;
-      const estimatedCostUsd = Number((durationMinutes * (isGroq ? 0 : 0.006) + 0.0005).toFixed(4));
+      const estimatedCostUsd = Number((durationMinutes * (usesPaidBackup ? 0.006 : 0) + 0.0005).toFixed(4));
       await recordApiSpend(estimatedCostUsd).catch(() => {});
 
       return { rankedCount: rankedResult.rankedClips.length, resultKey };

@@ -195,8 +195,8 @@ const server = http.createServer(async (req, res) => {
           cookieArg = `--cookies "${cookieFilePath}"`;
         }
 
-        // Use yt-dlp with mobile client extractor args to bypass datacenter bot detection
-        const ytdlpCmd = `yt-dlp ${cookieArg} --extractor-args "youtube:player_client=android,web,mweb" -f "ba[ext=m4a]/ba/b" --max-filesize 20M -o "${outputPath}" "${ytUrl}"`;
+        // Use yt-dlp with mobile client extractor args and EJS solver to bypass datacenter bot detection
+        const ytdlpCmd = `yt-dlp ${cookieArg} --remote-components ejs:github --js-runtimes node --extractor-args "youtube:player_client=android,web,mweb" -f "ba[abr<=96]/ba[ext=m4a]/ba/b" --max-filesize 50M -o "${outputPath}" "${ytUrl}"`;
         await execAsync(ytdlpCmd);
 
         const audioBuf = await fs.readFile(outputPath);

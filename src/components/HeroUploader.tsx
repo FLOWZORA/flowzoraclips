@@ -116,7 +116,7 @@ export default function HeroUploader() {
     dedupedCount: 0,
   });
   // Transcription backend behind the latest result (cloudflare/groq/openai/mixed).
-  const [transcriptionProvider, setTranscriptionProvider] = useState<string>('groq');
+  const [transcriptionProvider, setTranscriptionProvider] = useState<string>('cloudflare');
 
   const handleRunPipeline = async () => {
     setIsProcessing(true);
@@ -367,7 +367,7 @@ export default function HeroUploader() {
           dedupedCount: d.rankedResult.dedupedCount,
         });
         setTranscriptionProvider(
-          d.transcriptionProvider || d.transcription?.provider || 'groq'
+          d.transcriptionProvider || d.transcription?.provider || 'cloudflare'
         );
         setShowResults(true);
 

@@ -90,6 +90,6 @@ export async function runTextPipeline(
     candidatesGenerated: candidates.length,
     rankedResult,
     scoring,
-    transcriptionProvider: transcription.provider || 'groq',
+    transcriptionProvider: transcription.provider || 'cloudflare',
   };
 }

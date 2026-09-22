@@ -38,7 +38,9 @@ export async function transcribeAudio(
   filename: string = 'audio.mp3',
   language?: SourceLanguage
 ): Promise<WhisperTranscriptionResult> {
-  // Support Groq Cloud (100% Free Whisper Large v3) or OpenAI Whisper API
+  // Priority order (strict): 1) Cloudflare Workers AI Whisper first,
+  // 2) Groq / OpenAI Whisper ONLY as backup when Cloudflare fails or is
+  // not configured. Groq is never tried first.
   const groqKey = process.env.GROQ_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
 
@@ -49,9 +51,12 @@ export async function transcribeAudio(
     : 'https://api.openai.com/v1/audio/transcriptions';
   const model = isGroq ? 'whisper-large-v3' : 'whisper-1';
 
-  if (!apiKey) {
+  const cfConfigured = isCloudflareWhisperConfigured();
+  const hasBackup = Boolean(apiKey);
+
+  if (!cfConfigured && !hasBackup) {
     throw new Error(
-      'Transcription API key is not configured. Please set GROQ_API_KEY (free) or OPENAI_API_KEY in your .env.local file.'
+      'Transcription is not configured. Please set CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN (primary) and optionally GROQ_API_KEY (free backup) or OPENAI_API_KEY in your .env.local file.'
     );
   }
 
@@ -65,38 +70,48 @@ export async function transcribeAudio(
   // (e.g. a 58-min 64kbps MP3 is ~28 MB, 120 min is ~55 MB) is split into
   // sequential <20 MB chunks, transcribed piece-by-piece, and concatenated
   // with timestamps re-offset — supporting videos up to ~120 minutes.
+  // NOTE: each chunk still goes Cloudflare-first via transcribeSingleChunk;
+  // the Groq/OpenAI config below is backup-only.
   const GROQ_MAX_BYTES = 25 * 1024 * 1024;
   if (audioBuffer.length > GROQ_MAX_BYTES) {
     return transcribeAudioInChunks(audioBuffer, filename, language, {
-      apiKey: apiKey as string,
-      endpoint,
-      model,
+      apiKey: (apiKey as string | null) ?? null,
+      endpoint: hasBackup ? endpoint : null,
+      model: hasBackup ? model : null,
     });
   }
 
   return transcribeSingleChunk(audioBuffer, filename, language, {
-    apiKey: apiKey as string,
-    endpoint,
-    model,
+    apiKey: (apiKey as string | null) ?? null,
+    endpoint: hasBackup ? endpoint : null,
+    model: hasBackup ? model : null,
   });
 }
 
 export interface TranscribeCallConfig {
-  apiKey: string;
-  endpoint: string;
-  model: string;
+  /** Null when no backup backend is configured (Cloudflare-only mode). */
+  apiKey: string | null;
+  endpoint: string | null;
+  model: string | null;
 }
 
 /**
- * Resolves which transcription backend (Groq free tier vs OpenAI) to call
- * from the configured environment. Exported for the background job pipeline.
+ * Resolves the BACKUP transcription backend (Groq free tier vs OpenAI).
+ * Cloudflare Workers AI is always tried first inside transcribeSingleChunk
+ * and is not part of this config — this only describes the fallback.
+ * apiKey/endpoint/model are null when no backup is configured.
+ * Exported for the background job pipeline.
  */
 export function resolveTranscriptionConfig(): TranscribeCallConfig {
   const groqKey = process.env.GROQ_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
   const isGroq = Boolean(groqKey && !groqKey.includes('YourGroqApiKey'));
+  const apiKey = isGroq ? groqKey : openaiKey;
+  if (!apiKey) {
+    return { apiKey: null, endpoint: null, model: null };
+  }
   return {
-    apiKey: (isGroq ? groqKey : openaiKey) as string,
+    apiKey: apiKey as string,
     endpoint: isGroq
       ? 'https://api.groq.com/openai/v1/audio/transcriptions'
       : 'https://api.openai.com/v1/audio/transcriptions',
@@ -105,9 +120,13 @@ export function resolveTranscriptionConfig(): TranscribeCallConfig {
 }
 
 /**
- * Single Whisper API call (≤25 MB). Exported for the background job pipeline,
- * which transcribes one audio chunk per step so each serverless invocation
- * stays small. Prefer transcribeAudio() for one-shot use.
+ * Single transcription call (≤25 MB). Strict order:
+ *   1. Cloudflare Workers AI Whisper first (when configured).
+ *   2. Groq/OpenAI backup ONLY if Cloudflare is unconfigured or throws.
+ * Groq is never contacted first.
+ * Exported for the background job pipeline, which transcribes one audio
+ * chunk per step so each serverless invocation stays small.
+ * Prefer transcribeAudio() for one-shot use.
  */
 export async function transcribeSingleChunk(
   audioBuffer: Buffer | Uint8Array,
@@ -116,7 +135,9 @@ export async function transcribeSingleChunk(
   config: TranscribeCallConfig
 ): Promise<WhisperTranscriptionResult> {
   const { apiKey, endpoint, model } = config;
-  const isGroq = endpoint.includes('groq');
+  const hasBackup = Boolean(apiKey && endpoint && model);
+  const isGroq = (endpoint || '').includes('groq');
+  const backupLabel = isGroq ? 'Groq' : 'OpenAI';
   // Remember a Cloudflare failure so that if the Groq/OpenAI fallback ALSO
   // fails, the surfaced error names both causes — otherwise only the
   // fallback error is visible and the primary failure stays hidden in logs.
@@ -141,10 +162,33 @@ export async function transcribeSingleChunk(
         };
       } catch (cfErr: any) {
         cfFailure = cfErr.message || String(cfErr);
-        console.warn(
-          `[Whisper] Cloudflare transcription failed (${cfFailure}), falling back to ${isGroq ? 'Groq' : 'OpenAI'}.`
-        );
+        if (hasBackup) {
+          console.warn(
+            `[Whisper] Cloudflare transcription failed (${cfFailure}), falling back to ${backupLabel} backup.`
+          );
+        } else {
+          // Cloudflare-first with no backup configured — surface CF error directly.
+          throw cfErr;
+        }
       }
+    } else if (!hasBackup) {
+      throw new Error(
+        'Transcription is not configured. Please set CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN (primary) and optionally GROQ_API_KEY (free backup) or OPENAI_API_KEY.'
+      );
+    } else {
+      console.log(`[Whisper] Cloudflare not configured, using ${backupLabel} backup.`);
+    }
+
+    // ---- BACKUP ONLY: reached solely when Cloudflare was unconfigured or failed. ----
+    // Groq is never tried first; this block runs only as a fallback.
+    if (!apiKey || !endpoint || !model) {
+      // No backup configured and Cloudflare already failed (or threw above).
+      // cfFailure carries the primary error; otherwise config is missing.
+      throw new Error(
+        cfFailure
+          ? `Cloudflare transcription failed (${cfFailure}) and no backup is configured. Set GROQ_API_KEY (free backup) to enable fallback.`
+          : 'Transcription backup is not configured. Set GROQ_API_KEY (free backup) or OPENAI_API_KEY.'
+      );
     }
 
     const lowerName = filename.toLowerCase();
@@ -199,7 +243,7 @@ export async function transcribeSingleChunk(
 
     formData.append('prompt', promptText);
 
-    console.log(`[Whisper] Sending ${(audioBuffer.length / (1024 * 1024)).toFixed(1)} MB to ${isGroq ? 'Groq' : 'OpenAI'} as ${mimeType}...`);
+    console.log(`[Whisper] Sending ${(audioBuffer.length / (1024 * 1024)).toFixed(1)} MB to ${backupLabel} backup as ${mimeType}...`);
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -224,7 +268,7 @@ export async function transcribeSingleChunk(
     }
 
     const data = await response.json();
-    console.log(`[Whisper API] Transcription completed via ${isGroq ? 'Groq Whisper Large v3' : 'OpenAI'}. Words: ${data.words?.length || 0}, Duration: ${data.duration?.toFixed(1)}s`);
+    console.log(`[Whisper API] Transcription completed via ${backupLabel} backup (${isGroq ? 'Groq Whisper Large v3' : 'OpenAI'}). Words: ${data.words?.length || 0}, Duration: ${data.duration?.toFixed(1)}s`);
     return { ...parseWhisperVerboseResponse(data), provider: (isGroq ? 'groq' : 'openai') as TranscriptionProvider };
   } catch (err: any) {
     // If Cloudflare (primary) already failed and the fallback just died too,
@@ -360,7 +404,7 @@ async function transcribeAudioInChunks(
       `[Whisper] Chunked transcription complete: ${numChunks} chunks, ${allWords.length} words, ${duration.toFixed(1)}s`
     );
     // Provider summary: unanimous → that provider, otherwise the fallback fired.
-    const providerSet = new Set(chunkResults.map((r) => r.provider || 'groq'));
+    const providerSet = new Set(chunkResults.map((r) => r.provider || 'cloudflare'));
     const provider: TranscriptionProvider =
       providerSet.size === 1 ? ([...providerSet][0] as TranscriptionProvider) : 'mixed';
     return {
