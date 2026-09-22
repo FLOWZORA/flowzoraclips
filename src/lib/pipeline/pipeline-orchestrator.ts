@@ -24,6 +24,8 @@ export interface PipelineExecutionResult {
   rankedResult: RankedClipResult;
   /** Whether AI ranking actually ran, or silently fell back to heuristics. */
   scoring: ScoringReport;
+  /** Transcription backend surfaced for UI display (cloudflare/groq/openai/mixed). */
+  transcriptionProvider: string;
 }
 
 /**
@@ -88,5 +90,6 @@ export async function runTextPipeline(
     candidatesGenerated: candidates.length,
     rankedResult,
     scoring,
+    transcriptionProvider: transcription.provider || 'groq',
   };
 }

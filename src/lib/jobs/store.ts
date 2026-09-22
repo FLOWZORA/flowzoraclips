@@ -1,4 +1,5 @@
 import { getSupabaseAdmin, inMemoryDb } from '../db/supabase';
+import { getBufferFromR2, uploadBufferToR2 } from '../storage/r2';
 
 export type JobStatus =
   | 'pending'
@@ -28,6 +29,34 @@ export interface VideoJobRecord {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function jobKey(id: string): string {
+  return `jobs/${id}/job.json`;
+}
+
+/**
+ * Durable cross-instance backup for jobs that can't use Supabase (demo /
+ * non-UUID users). Serverless instances don't share memory, so without this
+ * a status poll landing on a different instance returns "Job not found".
+ * Best-effort: failures fall back to memory-only behavior.
+ */
+async function persistJobToR2(record: VideoJobRecord): Promise<void> {
+  try {
+    await uploadBufferToR2(jobKey(record.id), Buffer.from(JSON.stringify(record), 'utf-8'), 'application/json');
+  } catch (_) {}
+}
+
+async function readJobFromR2(id: string): Promise<VideoJobRecord | null> {
+  try {
+    const buf = await getBufferFromR2(jobKey(id));
+    if (!buf) return null;
+    const parsed = JSON.parse(buf.toString('utf-8'));
+    if (!parsed || parsed.id !== id) return null;
+    return parsed as VideoJobRecord;
+  } catch (_) {
+    return null;
+  }
+}
 
 /** Supabase jobs.user_id is a UUID FK — demo/non-UUID users run on the in-memory store. */
 function useSupabaseFor(userId: string): boolean {
@@ -118,6 +147,7 @@ export async function createJob(input: {
     updatedAt: now,
   };
   inMemoryDb.jobs.set(id, record);
+  await persistJobToR2(record);
   return record;
 }
 
@@ -129,7 +159,15 @@ export async function getJob(id: string): Promise<VideoJobRecord | null> {
       if (!error && data) return rowToRecord(data);
     } catch (_) {}
   }
-  return (inMemoryDb.jobs.get(id) as VideoJobRecord) || null;
+  const mem = inMemoryDb.jobs.get(id) as VideoJobRecord | undefined;
+  if (mem) return mem;
+  // Cross-instance fallback: another instance may have created/updated it.
+  const fromR2 = await readJobFromR2(id);
+  if (fromR2) {
+    inMemoryDb.jobs.set(id, fromR2);
+    return fromR2;
+  }
+  return null;
 }
 
 export async function updateJob(
@@ -177,5 +215,6 @@ export async function updateJob(
   }
 
   inMemoryDb.jobs.set(id, updated);
+  await persistJobToR2(updated);
   return updated;
 }

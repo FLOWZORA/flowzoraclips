@@ -31,6 +31,14 @@ interface NaiveClip {
   cutMidSentence: boolean;
 }
 
+/** Human label for the transcription backend badge. */
+function providerLabel(provider: string): string {
+  if (provider === 'cloudflare') return 'Cloudflare Workers AI';
+  if (provider === 'openai') return 'OpenAI Whisper';
+  if (provider === 'mixed') return 'Cloudflare + Groq fallback';
+  return 'Groq Whisper';
+}
+
 export default function HeroUploader() {
   // Spoken language of the source media. Drives the Whisper language hint +
   // context prompt (matched vocabulary = fewer wrong words), filler-word
@@ -107,6 +115,8 @@ export default function HeroUploader() {
     fillersCount: 0,
     dedupedCount: 0,
   });
+  // Transcription backend behind the latest result (cloudflare/groq/openai/mixed).
+  const [transcriptionProvider, setTranscriptionProvider] = useState<string>('groq');
 
   const handleRunPipeline = async () => {
     setIsProcessing(true);
@@ -356,6 +366,9 @@ export default function HeroUploader() {
           fillersCount: d.fillerReport.fillerCount,
           dedupedCount: d.rankedResult.dedupedCount,
         });
+        setTranscriptionProvider(
+          d.transcriptionProvider || d.transcription?.provider || 'groq'
+        );
         setShowResults(true);
 
         if (json.sourceVideoKey) {
@@ -694,6 +707,24 @@ export default function HeroUploader() {
               {showResults ? (
                 <span>
                   Analyzed {stats.words} words across {stats.duration}s • {stats.fillersCount} filler words flagged • {stats.dedupedCount} duplicates pruned
+                  <span
+                    className={`ml-2 inline-flex items-center rounded-md border px-2 py-0.5 font-mono text-[10px] font-semibold ${
+                      transcriptionProvider === 'cloudflare'
+                        ? 'border-[#10B981]/30 bg-[#10B981]/10 text-[#10B981]'
+                        : 'border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#F59E0B]'
+                    }`}
+                    title={
+                      transcriptionProvider === 'cloudflare'
+                        ? 'Transcribed free with Cloudflare Workers AI Whisper'
+                        : transcriptionProvider === 'mixed'
+                          ? 'Started on Cloudflare Workers AI, finished on the Groq fallback'
+                          : transcriptionProvider === 'openai'
+                            ? 'Transcribed with OpenAI Whisper (paid fallback)'
+                            : 'Transcribed with Groq Whisper (fallback — Cloudflare was unavailable)'
+                    }
+                  >
+                    via {providerLabel(transcriptionProvider)}
+                  </span>
                 </span>
               ) : (
                 <span>Ready to transcribe and rank with Gemini API</span>

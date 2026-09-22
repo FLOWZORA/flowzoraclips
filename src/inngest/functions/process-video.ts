@@ -266,6 +266,7 @@ async function runProcessVideo(
         language,
         scriptPreference,
         transcription,
+        transcriptionProvider: transcription.provider || 'groq',
         fillerReport,
         candidatesGenerated: candidates.length,
         rankedResult,

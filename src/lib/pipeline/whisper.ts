@@ -16,12 +16,16 @@ function getFfmpegPath(): string {
   return installer.path as string;
 }
 
+export type TranscriptionProvider = 'cloudflare' | 'groq' | 'openai' | 'mixed';
+
 export interface WhisperTranscriptionResult {
   text: string;
   language: string;
   duration: number;
   segments: TranscriptSegment[];
   words: WordTimestamp[];
+  /** Which backend produced this transcript (majority vote across chunks). */
+  provider?: TranscriptionProvider;
 }
 
 /**
@@ -113,6 +117,10 @@ export async function transcribeSingleChunk(
 ): Promise<WhisperTranscriptionResult> {
   const { apiKey, endpoint, model } = config;
   const isGroq = endpoint.includes('groq');
+  // Remember a Cloudflare failure so that if the Groq/OpenAI fallback ALSO
+  // fails, the surfaced error names both causes — otherwise only the
+  // fallback error is visible and the primary failure stays hidden in logs.
+  let cfFailure: string | null = null;
   try {
     // Primary provider: Cloudflare Workers AI Whisper (free tier). Any CF
     // failure (daily quota spent, timeout, API error) falls through to
@@ -129,10 +137,12 @@ export async function transcribeSingleChunk(
           duration: cf.duration,
           segments: cf.segments,
           words: cf.words,
+          provider: 'cloudflare' as TranscriptionProvider,
         };
       } catch (cfErr: any) {
+        cfFailure = cfErr.message || String(cfErr);
         console.warn(
-          `[Whisper] Cloudflare transcription failed (${cfErr.message}), falling back to ${isGroq ? 'Groq' : 'OpenAI'}.`
+          `[Whisper] Cloudflare transcription failed (${cfFailure}), falling back to ${isGroq ? 'Groq' : 'OpenAI'}.`
         );
       }
     }
@@ -215,9 +225,14 @@ export async function transcribeSingleChunk(
 
     const data = await response.json();
     console.log(`[Whisper API] Transcription completed via ${isGroq ? 'Groq Whisper Large v3' : 'OpenAI'}. Words: ${data.words?.length || 0}, Duration: ${data.duration?.toFixed(1)}s`);
-    return parseWhisperVerboseResponse(data);
+    return { ...parseWhisperVerboseResponse(data), provider: (isGroq ? 'groq' : 'openai') as TranscriptionProvider };
   } catch (err: any) {
-    // Re-throw all errors so the pipeline surfaces them to the user
+    // If Cloudflare (primary) already failed and the fallback just died too,
+    // name both causes — otherwise only the fallback error is visible and the
+    // primary failure stays hidden in server logs.
+    if (cfFailure && !String(err?.message || '').includes('Cloudflare')) {
+      err.message = `${err.message} [Cloudflare primary also failed: ${cfFailure}]`;
+    }
     throw err;
   }
 }
@@ -344,12 +359,17 @@ async function transcribeAudioInChunks(
     console.log(
       `[Whisper] Chunked transcription complete: ${numChunks} chunks, ${allWords.length} words, ${duration.toFixed(1)}s`
     );
+    // Provider summary: unanimous → that provider, otherwise the fallback fired.
+    const providerSet = new Set(chunkResults.map((r) => r.provider || 'groq'));
+    const provider: TranscriptionProvider =
+      providerSet.size === 1 ? ([...providerSet][0] as TranscriptionProvider) : 'mixed';
     return {
       text: fullText,
       language: chunkResults[0]?.language || 'en',
       duration,
       segments: allSegments,
       words: allWords,
+      provider,
     };
   } finally {
     try {
