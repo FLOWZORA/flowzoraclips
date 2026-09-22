@@ -1,4 +1,5 @@
 import { TranscriptSegment, WordTimestamp, SourceLanguage } from './types';
+import { transcribeWithCloudflare, isCloudflareWhisperConfigured } from './cloudflare-whisper';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -113,6 +114,29 @@ export async function transcribeSingleChunk(
   const { apiKey, endpoint, model } = config;
   const isGroq = endpoint.includes('groq');
   try {
+    // Primary provider: Cloudflare Workers AI Whisper (free tier). Any CF
+    // failure (daily quota spent, timeout, API error) falls through to
+    // Groq/OpenAI below — the pipeline keeps working either way.
+    if (isCloudflareWhisperConfigured()) {
+      try {
+        const cf = await transcribeWithCloudflare(audioBuffer, language);
+        console.log(
+          `[Whisper] Transcribed via Cloudflare Workers AI. Words: ${cf.words.length}, Duration: ${cf.duration.toFixed(1)}s`
+        );
+        return {
+          text: cf.text,
+          language: cf.language,
+          duration: cf.duration,
+          segments: cf.segments,
+          words: cf.words,
+        };
+      } catch (cfErr: any) {
+        console.warn(
+          `[Whisper] Cloudflare transcription failed (${cfErr.message}), falling back to ${isGroq ? 'Groq' : 'OpenAI'}.`
+        );
+      }
+    }
+
     const lowerName = filename.toLowerCase();
     // Map file extension to the MIME type Groq/OpenAI accept for audio
     let mimeType = 'audio/mpeg'; // default: mp3
