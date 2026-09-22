@@ -167,8 +167,11 @@ async function postAudio(
       Authorization: `Bearer ${apiToken}`,
       'Content-Type': isJson ? 'application/json' : 'audio/mpeg',
     },
+    // Per Cloudflare's Whisper tutorial, optional params (language, task,
+    // vad_filter, initial_prompt) ride in a JSON body with base64 audio —
+    // the int-array schema form does not carry them the same way.
     body: isJson
-      ? JSON.stringify({ audio: Array.from(buffer.values()), language })
+      ? JSON.stringify({ audio: buffer.toString('base64'), language })
       : (buffer as any),
   });
 
