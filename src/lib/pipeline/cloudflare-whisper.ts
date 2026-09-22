@@ -27,11 +27,12 @@ function getModel(): string {
 }
 
 /**
- * Buffers over this size are sub-chunked before calling Workers AI — the
- * docs don't guarantee a max audio length per request, so ~10-minute pieces
- * stay safely inside any payload limit. Timestamps are re-offset on merge.
+ * Buffers over this size are sub-chunked before calling Workers AI — the API
+ * rejects ~10 MB audio payloads (413 Request too large), so ~4 MB pieces
+ * (≈8.5 min at 64kbps) stay safely inside the limit. Timestamps are
+ * re-offset on merge.
  */
-const CF_SUBCHUNK_BYTES = 10 * 1024 * 1024;
+const CF_SUBCHUNK_BYTES = 4 * 1024 * 1024;
 
 export async function transcribeWithCloudflare(
   audioBuffer: Buffer | Uint8Array,
@@ -50,7 +51,7 @@ export async function transcribeWithCloudflare(
   if (audioBuffer.length > CF_SUBCHUNK_BYTES) {
     const { chunks } = await splitAudioBufferIntoChunks(audioBuffer, {
       chunkTargetBytes: CF_SUBCHUNK_BYTES,
-      maxChunks: 20,
+      maxChunks: 50, // 50 × 4 MB ≈ 400+ min at 64kbps
       overlapSec: 3,
     });
     pieces = chunks.map((c) => ({ buffer: c.buffer, startSec: c.startSec }));
