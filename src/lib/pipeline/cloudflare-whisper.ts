@@ -16,14 +16,14 @@ const CF_API_BASE = 'https://api.cloudflare.com/client/v4';
  * tier: 10,000 neurons/day ≈ one 3-hour video/day, no card required).
  *
  * Env: CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN,
- *   optional CLOUDFLARE_WHISPER_MODEL (default @cf/openai/whisper).
+ *   optional CLOUDFLARE_WHISPER_MODEL (default @cf/openai/whisper-large-v3-turbo).
  */
 export function isCloudflareWhisperConfigured(): boolean {
   return Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN);
 }
 
 function getModel(): string {
-  return process.env.CLOUDFLARE_WHISPER_MODEL || '@cf/openai/whisper';
+  return process.env.CLOUDFLARE_WHISPER_MODEL || '@cf/openai/whisper-large-v3-turbo';
 }
 
 /**
@@ -45,6 +45,8 @@ export async function transcribeWithCloudflare(
   if (!accountId || !apiToken) {
     throw new Error('Cloudflare Workers AI is not configured (CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN).');
   }
+  const model = getModel();
+  console.log(`[CF Whisper] Model: ${model}`);
 
   // Split large buffers so every request stays small; tiny inputs go direct.
   let pieces: Array<{ buffer: Buffer; startSec: number }> = [
@@ -105,7 +107,7 @@ export async function transcribeWithCloudflare(
   const segments = synthesizeSegments(allWords);
   const duration =
     allWords.length > 0 ? Number(allWords[allWords.length - 1].end.toFixed(2)) : 0;
-  console.log(`[CF Whisper] Complete: ${allWords.length} words, ${duration.toFixed(1)}s.`);
+  console.log(`[CF Whisper] Complete: model=${model}, ${allWords.length} words, ${duration.toFixed(1)}s.`);
   return {
     text: texts.join(' ').trim(),
     language: language === 'hindi' ? 'hi' : 'en',
