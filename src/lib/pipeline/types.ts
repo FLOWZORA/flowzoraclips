@@ -39,7 +39,7 @@ export interface ScoreDimensions {
 }
 
 /** How a score was actually produced. */
-export type ScoringEngine = 'gemini' | 'heuristic';
+export type ScoringEngine = 'gemini' | 'groq' | 'heuristic';
 
 /** Why Gemini scoring was skipped, when it was. */
 export type ScoringFallbackReason = 'no_api_key' | 'quota_exceeded' | 'api_error' | 'empty_response';
@@ -57,6 +57,7 @@ export interface ScoringReport {
   engine: ScoringEngine | 'mixed';
   degraded: boolean;              // true when any clip fell back to heuristics
   geminiScored: number;
+  groqScored: number;             // Gemini-quota backup via Groq LLM (still real AI ranking)
   heuristicScored: number;
   fallbackReason?: ScoringFallbackReason;
   message?: string;               // human-readable, safe to surface in a UI

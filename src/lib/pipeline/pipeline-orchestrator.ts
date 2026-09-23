@@ -69,7 +69,7 @@ export async function runTextPipeline(
   // reasoning). Surface it so callers can tell a real ranking from a fallback.
   const scoring = buildScoringReport(scoreMap.values());
   if (scoring.degraded) {
-    console.warn(`[FLOWZORA Pipeline] DEGRADED RANKING: ${scoring.message} (${scoring.heuristicScored}/${scoring.geminiScored + scoring.heuristicScored} clips)`);
+    console.warn(`[FLOWZORA Pipeline] DEGRADED RANKING: ${scoring.message} (${scoring.heuristicScored}/${scoring.geminiScored + scoring.groqScored + scoring.heuristicScored} clips)`);
   }
 
   // Stage 5: Overlap Deduplication & Quality-Driven Ranking

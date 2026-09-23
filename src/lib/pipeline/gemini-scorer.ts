@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { CandidateScore, ScoreDimensions, ScoringFallbackReason, ScoringReport } from './types';
+import { CandidateScore, ScoreDimensions, ScoringEngine, ScoringFallbackReason, ScoringReport } from './types';
 import { CandidateWindow } from './candidate-generator';
 
 const SCORING_SYSTEM_INSTRUCTION = `You are an elite short-form video editor and algorithmic viral strategist specializing in Hindi, Hinglish, and English creator content (YouTube Shorts, Instagram Reels, TikTok).
@@ -25,7 +25,12 @@ Your job is to evaluate candidate audio/video segments from long-form podcasts (
 Output strict JSON with exact numerical floats and a 1-line transparent reasoning explanation.`;
 
 /**
- * Score a single candidate segment via Gemini 2.5 Flash API.
+ * Score a single candidate segment. Strict order — never reversed:
+ *   1. Gemini first (primary).
+ *   2. Groq LLM backup ONLY when Gemini hits its limit or errors.
+ *   3. Offline heuristic last resort.
+ * Groq reuses the existing GROQ_API_KEY (free tier, OpenAI-compatible chat
+ * endpoint) — no new key needed.
  */
 export async function scoreCandidateWithGemini(
   candidate: CandidateWindow,
@@ -106,7 +111,77 @@ Evaluate this candidate and respond with structured JSON.`;
 
   // Deterministic heuristic scoring fallback when offline or without API key.
   // Tagged so a degraded run is never mistaken for a real AI ranking.
+  // Backup: Groq LLM (same free GROQ_API_KEY as the transcription backup)
+  // before giving up on AI ranking entirely.
+  const groqScore = await scoreCandidateWithGroq(candidate, contextLanguage);
+  if (groqScore) return groqScore;
   return { ...calculateHeuristicScore(candidate), fallbackReason };
+}
+
+/**
+ * Backup scorer via Groq's free chat-completions endpoint (OpenAI-compatible).
+ * Returns null (never throws) so the caller falls through to heuristics.
+ */
+async function scoreCandidateWithGroq(
+  candidate: CandidateWindow,
+  contextLanguage: string = 'hinglish'
+): Promise<CandidateScore | null> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey || apiKey.includes('YourGroqApiKey')) return null;
+  const model = process.env.GROQ_SCORING_MODEL || 'llama-3.3-70b-versatile';
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: SCORING_SYSTEM_INSTRUCTION },
+          {
+            role: 'user',
+            content: `Candidate Segment (${candidate.duration}s, language: ${contextLanguage}):
+Duration: ${candidate.startTime}s to ${candidate.endTime}s
+Opening Hook Line: "${candidate.firstSentence}"
+Closing Payoff Line: "${candidate.lastSentence}"
+Full Transcript:
+"""
+${candidate.text}
+"""
+Evaluate this candidate and respond with ONLY a JSON object with keys: hookStrength, standaloneCoherence, emotionalPayoff, topicTrendAlignment (numbers 0-10) and reasoning (1 sentence).`,
+          },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.warn(`[Scoring] Groq backup failed (${res.status}): ${errText.slice(0, 200)}`);
+      return null;
+    }
+    const data: any = await res.json();
+    const content: string = data?.choices?.[0]?.message?.content?.trim() || '';
+    if (!content) return null;
+    const parsed = JSON.parse(content);
+    const dimensions: ScoreDimensions = {
+      hookStrength: clampScore(parsed.hookStrength),
+      standaloneCoherence: clampScore(parsed.standaloneCoherence),
+      emotionalPayoff: clampScore(parsed.emotionalPayoff),
+      topicTrendAlignment: clampScore(parsed.topicTrendAlignment),
+    };
+    return {
+      dimensions,
+      compositeScore: calculateCompositeScore(dimensions),
+      reasoning: parsed.reasoning || 'Strong contextual engagement and topic alignment.',
+      scoringEngine: 'groq',
+    };
+  } catch (err: any) {
+    console.warn('[Scoring] Groq backup error, falling back to heuristic scoring:', err?.message || err);
+    return null;
+  }
 }
 
 /** Maps an SDK error onto a stable reason code. */
@@ -119,12 +194,15 @@ function classifyScoringError(err: any): ScoringFallbackReason {
 
 /** Aggregates per-clip engines into one report for the API response. */
 export function buildScoringReport(scores: Iterable<CandidateScore>): ScoringReport {
+  const list = [...scores];
   let geminiScored = 0;
+  let groqScored = 0;
   let heuristicScored = 0;
   let fallbackReason: ScoringFallbackReason | undefined;
 
-  for (const s of scores) {
+  for (const s of list) {
     if (s.scoringEngine === 'gemini') geminiScored++;
+    else if (s.scoringEngine === 'groq') groqScored++;
     else {
       heuristicScored++;
       fallbackReason = fallbackReason ?? s.fallbackReason;
@@ -132,11 +210,20 @@ export function buildScoringReport(scores: Iterable<CandidateScore>): ScoringRep
   }
 
   const degraded = heuristicScored > 0;
-  const engine = degraded ? (geminiScored > 0 ? 'mixed' : 'heuristic') : 'gemini';
+  const aiEngines = new Set(
+    list.map((s) => s.scoringEngine).filter((e) => e !== 'heuristic')
+  );
+  const engine: ScoringReport['engine'] = degraded
+    ? aiEngines.size > 0
+      ? 'mixed'
+      : 'heuristic'
+    : aiEngines.size === 1
+      ? ([...aiEngines][0] as ScoringEngine)
+      : 'mixed';
 
   const MESSAGES: Record<ScoringFallbackReason, string> = {
     quota_exceeded:
-      'Gemini daily quota exhausted — clips were ranked by the offline heuristic, not the AI model. Quota resets at midnight Pacific.',
+      'Gemini daily quota exhausted (Groq backup also unavailable) — clips were ranked by the offline heuristic, not the AI model. Quota resets at midnight Pacific.',
     no_api_key:
       'No Gemini API key configured — clips were ranked by the offline heuristic, not the AI model.',
     api_error:
@@ -149,6 +236,7 @@ export function buildScoringReport(scores: Iterable<CandidateScore>): ScoringRep
     engine,
     degraded,
     geminiScored,
+    groqScored,
     heuristicScored,
     fallbackReason,
     message: degraded && fallbackReason ? MESSAGES[fallbackReason] : undefined,
