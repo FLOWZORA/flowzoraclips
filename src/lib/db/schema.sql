@@ -76,7 +76,20 @@ CREATE TABLE IF NOT EXISTS public.spend_ledger (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- 7. API Usage Ledger (estimate-based daily quota tracking)
+-- One row per billable provider call. Read back as "used today" and
+-- subtracted from each provider's documented free-tier daily cap.
+-- Resets are logical (created_at >= midnight PT), never deletions.
+CREATE TABLE IF NOT EXISTS public.api_usage (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    provider TEXT NOT NULL CHECK (provider IN ('cloudflare', 'groq-transcribe', 'openai-transcribe', 'gemini', 'groq-scoring')),
+    kind TEXT NOT NULL CHECK (kind IN ('audio-min', 'request', 'token')),
+    amount NUMERIC(12, 4) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Create Indexes for Fast Queries
+CREATE INDEX IF NOT EXISTS idx_api_usage_day ON public.api_usage(provider, kind, created_at);
 CREATE INDEX IF NOT EXISTS idx_videos_user_id ON public.videos(user_id);
 CREATE INDEX IF NOT EXISTS idx_clips_video_id ON public.clips(video_id);
 CREATE INDEX IF NOT EXISTS idx_clips_rank ON public.clips(video_id, rank);

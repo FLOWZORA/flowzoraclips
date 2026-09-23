@@ -7,6 +7,7 @@ class InMemoryDatabase {
   jobs = new Map<string, any>();
   transactions = new Map<string, any>();
   spendLedger = new Map<string, any>();
+  usageEvents = new Map<string, any>();
 
   constructor() {
     // Seed standard demo user

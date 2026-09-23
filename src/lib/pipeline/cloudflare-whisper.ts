@@ -1,5 +1,6 @@
 import { TranscriptSegment, WordTimestamp, SourceLanguage } from './types';
 import { splitAudioBufferIntoChunks } from './audio-extractor';
+import { recordApiUsage } from '@/lib/usage/usage-tracker';
 
 export interface CloudflareTranscriptionResult {
   text: string;
@@ -144,6 +145,8 @@ export async function transcribeWithCloudflare(
   const duration =
     allWords.length > 0 ? Number(allWords[allWords.length - 1].end.toFixed(2)) : 0;
   console.log(`[CF Whisper] Complete: model=${model}, ${allWords.length} words, ${duration.toFixed(1)}s.`);
+  // Usage ledger (estimate-based, never throws — see usage-tracker).
+  await recordApiUsage({ provider: 'cloudflare', kind: 'audio-min', amount: duration / 60 });
   return {
     text: texts.join(' ').trim(),
     language: language === 'hindi' ? 'hi' : 'en',

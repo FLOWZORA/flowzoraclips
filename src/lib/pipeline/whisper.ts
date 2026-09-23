@@ -1,5 +1,6 @@
 import { TranscriptSegment, WordTimestamp, SourceLanguage } from './types';
 import { transcribeWithCloudflare, isCloudflareWhisperConfigured } from './cloudflare-whisper';
+import { recordApiUsage } from '@/lib/usage/usage-tracker';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -312,6 +313,12 @@ export async function transcribeSingleChunk(
         `Backup transcription returned no words for this audio (empty transcript). Please try a different file — your credit is refunded automatically on failure.`
       );
     }
+    // Usage ledger (estimate-based, never throws — see usage-tracker).
+    await recordApiUsage({
+      provider: isGroq ? 'groq-transcribe' : 'openai-transcribe',
+      kind: 'audio-min',
+      amount: backup.duration / 60,
+    });
     return backup;
   } catch (err: any) {
     // If Cloudflare (primary) already failed and the fallback just died too,

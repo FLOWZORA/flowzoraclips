@@ -1,6 +1,7 @@
 import React from 'react';
 import Navbar from '@/components/Navbar';
 import HeroUploader from '@/components/HeroUploader';
+import UsageTracker from '@/components/UsageTracker';
 import HowItWorks from '@/components/HowItWorks';
 import ScoringExplainer from '@/components/ScoringExplainer';
 import FaqSection from '@/components/FaqSection';
@@ -31,6 +32,9 @@ export default function HomePage() {
 
             {/* The Hero Tool Widget */}
             <HeroUploader />
+
+            {/* Site-wide daily API quota (estimated) */}
+            <UsageTracker />
           </div>
         </section>
 

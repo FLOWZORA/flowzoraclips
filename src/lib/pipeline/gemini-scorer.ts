@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { CandidateScore, ScoreDimensions, ScoringEngine, ScoringFallbackReason, ScoringReport } from './types';
 import { CandidateWindow } from './candidate-generator';
+import { recordApiUsage, estimateTokens } from '@/lib/usage/usage-tracker';
 
 const SCORING_SYSTEM_INSTRUCTION = `You are an elite short-form video editor and algorithmic viral strategist specializing in Hindi, Hinglish, and English creator content (YouTube Shorts, Instagram Reels, TikTok).
 Your job is to evaluate candidate audio/video segments from long-form podcasts (each clip must be up to 35 seconds long) and assign rigorous, explainable scores from 0.0 to 10.0 across 4 specific dimensions:
@@ -93,6 +94,8 @@ Evaluate this candidate and respond with structured JSON.`;
 
         const compositeScore = calculateCompositeScore(dimensions);
 
+        // Usage ledger (estimate-based, never throws — see usage-tracker).
+        await recordApiUsage({ provider: 'gemini', kind: 'request', amount: 1 });
         return {
           dimensions,
           compositeScore,
@@ -172,6 +175,12 @@ Evaluate this candidate and respond with ONLY a JSON object with keys: hookStren
       emotionalPayoff: clampScore(parsed.emotionalPayoff),
       topicTrendAlignment: clampScore(parsed.topicTrendAlignment),
     };
+    // Usage ledger: estimated prompt+response tokens (never throws).
+    await recordApiUsage({
+      provider: 'groq-scoring',
+      kind: 'token',
+      amount: estimateTokens(candidate.text + candidate.firstSentence + candidate.lastSentence + content) + 500,
+    });
     return {
       dimensions,
       compositeScore: calculateCompositeScore(dimensions),
