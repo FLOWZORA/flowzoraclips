@@ -20,10 +20,12 @@ export interface RankedClipResult {
 
 const OVERLAP_THRESHOLD = 0.35; // 35% temporal overlap counts as duplicate
 const DEFAULT_QUALITY_THRESHOLD = 72; // Minimum composite score to qualify
+/** Hard ceiling: at most this many clips per video, regardless of duration. */
+export const MAX_CLIPS_PER_VIDEO = 10;
 
 /**
  * Dedupes overlapping candidate windows and ranks best-first by composite score.
- * Returns a quality-driven natural count, not an artificial quota.
+ * Returns at most MAX_CLIPS_PER_VIDEO clips, regardless of video duration.
  */
 export function dedupeAndRankCandidates(
   candidates: CandidateWindow[],
@@ -79,10 +81,14 @@ export function dedupeAndRankCandidates(
     accepted.push(scoredList[0]);
   }
 
+  // Fixed cap: at most MAX_CLIPS_PER_VIDEO clips per video, regardless of
+  // duration. `accepted` is already score-descending, so this keeps the top 10.
+  const capped = accepted.slice(0, MAX_CLIPS_PER_VIDEO);
+
   // Convert to CandidateClip format with 1-based ranks
   // Enforces hard ceiling: no clip generated can be more than 35 seconds long
   const MAX_ALLOWED_CLIP_DUR = 35;
-  const rankedClips: CandidateClip[] = accepted.map((item, idx) => {
+  const rankedClips: CandidateClip[] = capped.map((item, idx) => {
     const start = item.window.startTime;
     let end = item.window.endTime;
     let dur = item.window.duration;
