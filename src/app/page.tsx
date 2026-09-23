@@ -32,9 +32,6 @@ export default function HomePage() {
 
             {/* The Hero Tool Widget */}
             <HeroUploader />
-
-            {/* Site-wide daily API quota (estimated) */}
-            <UsageTracker />
           </div>
         </section>
 
@@ -49,6 +46,9 @@ export default function HomePage() {
 
         {/* Citation-Backed FAQ */}
         <FaqSection />
+
+        {/* Site-wide daily API quota dropdown (estimated) */}
+        <UsageTracker />
       </main>
 
       <Footer />
