@@ -35,6 +35,9 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* Site-wide daily API quota dropdown (estimated) */}
+        <UsageTracker />
+
         {/* Interactive Step-by-Step Pipeline Explainer */}
         <HowItWorks />
 
@@ -46,9 +49,6 @@ export default function HomePage() {
 
         {/* Citation-Backed FAQ */}
         <FaqSection />
-
-        {/* Site-wide daily API quota dropdown (estimated) */}
-        <UsageTracker />
       </main>
 
       <Footer />
