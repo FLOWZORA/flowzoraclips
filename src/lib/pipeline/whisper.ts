@@ -120,6 +120,15 @@ export function resolveTranscriptionConfig(): TranscribeCallConfig {
 }
 
 /**
+ * Detects Cloudflare quota/limit exhaustion (daily neurons spent, 429, etc.)
+ * so logs can name it explicitly. Any CF failure still falls back to Groq —
+ * this only affects the log message.
+ */
+function isCfQuotaError(message: string): boolean {
+  return /quota|limit|exhausted|insufficient|429|daily/i.test(message || '');
+}
+
+/**
  * Single transcription call (≤25 MB). Strict order:
  *   1. Cloudflare Workers AI Whisper first (when configured).
  *   2. Groq/OpenAI backup ONLY if Cloudflare is unconfigured or throws.
@@ -143,17 +152,19 @@ export async function transcribeSingleChunk(
   // fallback error is visible and the primary failure stays hidden in logs.
   let cfFailure: string | null = null;
   try {
-    // Primary provider: Cloudflare Workers AI Whisper (free tier). Any CF
-    // failure (daily quota spent, timeout, API error) falls through to
-    // Groq/OpenAI below — the pipeline keeps working either way.
+    // STRICT ORDER — never reversed:
+    //   1. Cloudflare Workers AI Whisper Large v3 Turbo first (primary).
+    //   2. Groq/OpenAI backup ONLY when Cloudflare hits its limit or errors.
+    // Groq is never contacted first.
     if (isCloudflareWhisperConfigured()) {
       try {
         const cf = await transcribeWithCloudflare(audioBuffer, language);
-        // The default Workers AI Whisper model returns plain text with no
-        // word-level timestamps — but candidates, captions, and exports all
-        // key off word times. Treat a wordless result as a primary failure
-        // so the Groq/OpenAI backup (verbose_json with timestamps) takes
-        // over below, instead of a silent "0 words / 0 highlights" success.
+        // Large v3 Turbo returns text + timed segments (word times are
+        // interpolated from them in cloudflare-whisper.ts) — but a result
+        // with zero words is still unusable for candidates, captions, and
+        // exports. Treat it as a primary failure so the Groq/OpenAI backup
+        // (verbose_json with timestamps) takes over below, instead of a
+        // silent "0 words / 0 highlights" success.
         if (!cf.words || cf.words.length === 0) {
           throw new Error(
             'Cloudflare Workers AI returned text without word-level timestamps, which highlight extraction requires.'
@@ -173,9 +184,12 @@ export async function transcribeSingleChunk(
       } catch (cfErr: any) {
         cfFailure = cfErr.message || String(cfErr);
         if (hasBackup) {
-          console.warn(
-            `[Whisper] Cloudflare transcription failed (${cfFailure}), falling back to ${backupLabel} backup.`
-          );
+          // Quota/limit spent and hard errors both fall through here — the
+          // backup keeps the pipeline working either way.
+          const reason = isCfQuotaError(cfFailure || '')
+            ? 'Cloudflare daily limit reached, using Groq backup'
+            : `Cloudflare transcription failed (${cfFailure}), falling back to ${backupLabel} backup`;
+          console.warn(`[Whisper] ${reason}.`);
         } else {
           // Cloudflare-first with no backup configured — surface CF error directly.
           throw cfErr;

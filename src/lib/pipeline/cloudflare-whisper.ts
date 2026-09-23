@@ -12,18 +12,32 @@ export interface CloudflareTranscriptionResult {
 const CF_API_BASE = 'https://api.cloudflare.com/client/v4';
 
 /**
- * Cloudflare Workers AI Whisper is the primary transcription provider (free
- * tier: 10,000 neurons/day ≈ one 3-hour video/day, no card required).
+ * Workers AI model — hardcoded to Large v3 Turbo. No override: the old
+ * `@cf/openai/whisper` default is removed completely.
+ * @see https://developers.cloudflare.com/workers-ai/models/whisper-large-v3-turbo/
+ */
+export const CLOUDFLARE_WHISPER_MODEL = '@cf/openai/whisper-large-v3-turbo';
+
+/** Back-compat alias (same hardcoded Turbo id). */
+export const DEFAULT_CLOUDFLARE_WHISPER_MODEL = CLOUDFLARE_WHISPER_MODEL;
+
+/**
+ * Cloudflare Workers AI Whisper Large v3 Turbo is ALWAYS tried first.
+ * Groq Whisper is strictly a backup when this fails (quota/limit/error) —
+ * Groq is never tried first.
  *
- * Env: CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN,
- *   optional CLOUDFLARE_WHISPER_MODEL (default @cf/openai/whisper-large-v3-turbo).
+ * Env: CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN.
  */
 export function isCloudflareWhisperConfigured(): boolean {
   return Boolean(process.env.CLOUDFLARE_ACCOUNT_ID?.trim() && process.env.CLOUDFLARE_API_TOKEN?.trim());
 }
 
+export function getCloudflareWhisperModel(): string {
+  return CLOUDFLARE_WHISPER_MODEL;
+}
+
 function getModel(): string {
-  return (process.env.CLOUDFLARE_WHISPER_MODEL || '@cf/openai/whisper-large-v3-turbo').trim();
+  return CLOUDFLARE_WHISPER_MODEL;
 }
 
 /**
@@ -123,8 +137,9 @@ export async function transcribeWithCloudflare(
     }
   }
 
-  // Workers AI returns no segments — synthesize coarse ones (sentence ends or
-  // ~8s windows) for candidate generation, which needs segment boundaries.
+  // Large v3 Turbo word times are interpolated from its timed segments, so
+  // re-synthesize coarse sentence/pause segments for candidate generation,
+  // which needs clean segment boundaries.
   const segments = synthesizeSegments(allWords);
   const duration =
     allWords.length > 0 ? Number(allWords[allWords.length - 1].end.toFixed(2)) : 0;
@@ -152,7 +167,7 @@ async function transcribeOneRequest(
   const model = getModel();
   const url = `${CF_API_BASE}/accounts/${accountId}/ai/run/${model}`;
 
-  // Attempt 1: raw binary, model auto-detects the language (best quality).
+  // Attempt 1: auto-detect the language (best quality, esp. Hinglish).
   try {
     return await postAudio(url, apiToken, buffer);
   } catch (err: any) {
@@ -174,8 +189,11 @@ function isMixedLanguageError(err: any): boolean {
 }
 
 /**
- * Sends one audio piece to Workers AI. Without a language this is a compact
- * binary upload; with a language it becomes a JSON {audio, language} body.
+ * Sends one audio piece to Workers AI Large v3 Turbo. Always uses the JSON
+ * `{ audio (base64), task, language? }` body — the canonical Turbo form per
+ * Cloudflare's docs — so optional params ride the same way every call.
+ * `language` is only pinned on the mixed-language retry path; otherwise the
+ * model auto-detects (best quality for Hinglish code-switching).
  */
 async function postAudio(
   url: string,
@@ -183,19 +201,18 @@ async function postAudio(
   buffer: Buffer,
   language?: string
 ): Promise<{ text: string; words: CfWord[] }> {
-  const isJson = Boolean(language);
+  const body: Record<string, unknown> = {
+    audio: buffer.toString('base64'),
+    task: 'transcribe',
+  };
+  if (language) body.language = language;
   const res = await fetch(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiToken}`,
-      'Content-Type': isJson ? 'application/json' : 'audio/mpeg',
+      'Content-Type': 'application/json',
     },
-    // Per Cloudflare's Whisper tutorial, optional params (language, task,
-    // vad_filter, initial_prompt) ride in a JSON body with base64 audio —
-    // the int-array schema form does not carry them the same way.
-    body: isJson
-      ? JSON.stringify({ audio: buffer.toString('base64'), language })
-      : (buffer as any),
+    body: JSON.stringify(body),
   });
 
   const data: any = await res.json().catch(() => ({}));
@@ -204,9 +221,9 @@ async function postAudio(
     const codes = (data.errors || []).map((e: any) => e.code).filter(Boolean);
     const codeStr = codes.length ? ` [${codes.join(',')}]` : '';
     // Code 7000 "No route for that URI" = request never routed: wrong
-    // CLOUDFLARE_ACCOUNT_ID or model slug (never an audio problem).
+    // CLOUDFLARE_ACCOUNT_ID (never an audio problem).
     const hint = codes.includes(7000)
-      ? ' (routing failed — check CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_WHISPER_MODEL)'
+      ? ' (routing failed — check CLOUDFLARE_ACCOUNT_ID)'
       : '';
     throw new Error(
       `Cloudflare Workers AI error (${res.status})${codeStr}: ${errors || res.statusText || 'request failed'}${hint}`
@@ -226,12 +243,12 @@ async function postAudio(
     })
     .filter((w): w is CfWord => Boolean(w && w.word));
 
-  // Turbo returns timed `segments` (start/end/text) even when the `words`
-  // array is absent — derive approximate word timestamps by distributing
-  // each segment's words evenly across its (model-produced) time range.
-  // Segment boundaries stay exact; only intra-segment splits are
-  // interpolated. Far better than zero words; Groq backup stays the
-  // precise-timestamp path when quota allows.
+  // Large v3 Turbo returns timed `segments` (start/end/text) plus a `vtt`
+  // subtitle string, but no `words` array — derive approximate word
+  // timestamps by distributing each segment's words evenly across its
+  // (model-produced) time range. Segment boundaries stay exact; only
+  // intra-segment splits are interpolated. Far better than zero words;
+  // Groq backup stays the precise-timestamp path when quota allows.
   let text = String(result.text || '');
   if (words.length === 0 && Array.isArray(result.segments)) {
     let segCount = 0;
@@ -259,7 +276,63 @@ async function postAudio(
     }
   }
 
+  // Last-resort fallback: Turbo also returns a `vtt` subtitle string. If
+  // `segments` was missing/empty, parse VTT cues into timed words the same
+  // way so the pipeline never sees a silent "0 words" success.
+  if (words.length === 0 && typeof result.vtt === 'string' && result.vtt.trim()) {
+    const fromVtt = parseVttToWords(result.vtt);
+    for (const w of fromVtt) words.push(w);
+    if (!text.trim() && words.length > 0) {
+      text = words.map((w) => w.word).join(' ');
+    }
+    if (words.length > 0) {
+      console.log(`[CF Whisper] Derived ${words.length} word timestamps from VTT output.`);
+    }
+  }
+
   return { text, words };
+}
+
+/**
+ * Minimal WebVTT cue parser for the Turbo `vtt` fallback:
+ * `00:00.000 --> 00:02.500` cue headers + caption lines. Cue word tokens
+ * are spread evenly across the cue range (same interpolation rule as
+ * the `segments` path).
+ */
+function parseVttToWords(vtt: string): CfWord[] {
+  const out: CfWord[] = [];
+  const cueRe =
+    /(\d{2}):(\d{2}):(\d{2})[.,](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[.,](\d{3})/;
+  const toSec = (h: string, m: string, s: string, ms: string) =>
+    Number(h) * 3600 + Number(m) * 60 + Number(s) + Number(ms) / 1000;
+  const blocks = vtt.split(/\r?\n\r?\n/);
+  for (const block of blocks) {
+    const lines = block.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) continue;
+    const headIdx = lines.findIndex((l) => cueRe.test(l));
+    if (headIdx === -1) continue;
+    const m = cueRe.exec(lines[headIdx]);
+    if (!m) continue;
+    const start = toSec(m[1], m[2], m[3], m[4]);
+    const end = toSec(m[5], m[6], m[7], m[8]);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+    const caption = lines
+      .slice(headIdx + 1)
+      .join(' ')
+      .replace(/<[^>]*>/g, '')
+      .trim();
+    if (!caption || /^webvtt/i.test(caption)) continue;
+    const tokens = caption.split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) continue;
+    const per = (end - start) / tokens.length;
+    tokens.forEach((tok, i) => {
+      const wStart = Number((start + i * per).toFixed(2));
+      let wEnd = Number((start + (i + 1) * per).toFixed(2));
+      if (wEnd - wStart > 2.0) wEnd = Number((wStart + 1.2).toFixed(2));
+      out.push({ word: tok, start: wStart, end: wEnd });
+    });
+  }
+  return out;
 }
 
 /**
