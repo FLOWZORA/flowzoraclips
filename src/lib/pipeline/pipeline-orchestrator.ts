@@ -3,6 +3,7 @@ import { transcribeAudio, WhisperTranscriptionResult } from './whisper';
 import { detectAndAnnotateFillers, FillerDetectionReport } from './filler-detect';
 import { generateCandidateSegments, CandidateWindow } from './candidate-generator';
 import { scoreCandidatesBatch, buildScoringReport } from './gemini-scorer';
+import { applySignalBonuses } from './signal-analyzer';
 import { dedupeAndRankCandidates, RankedClipResult } from './ranker';
 
 export interface PipelineExecutionOptions {
@@ -62,7 +63,18 @@ export async function runTextPipeline(
 
   // Stage 4: Structured Scoring via Gemini API (Gemini 2.5 Flash)
   console.log(`[FLOWZORA Pipeline] Scoring candidates across 4 dimensions via Gemini API...`);
-  const scoreMap = await scoreCandidatesBatch(candidates, language);
+  const rawScoreMap = await scoreCandidatesBatch(candidates, language);
+
+  // Stage 4b: Zero-cost multimodal-lite fusion — audio-signal bonuses
+  // (energy peaks, speech excitement, clean entry/exit) applied uniformly
+  // across engines. Best-effort; never degrades a score.
+  const { map: scoreMap } = await applySignalBonuses(
+    rawScoreMap,
+    candidates,
+    fillerReport.annotatedWords,
+    transcription.duration,
+    options.audioBuffer
+  );
 
   // A quota exhaustion silently degrades every clip to heuristic scoring, which
   // looks like a working ranking (identical composite scores, boilerplate

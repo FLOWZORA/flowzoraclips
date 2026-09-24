@@ -20,12 +20,12 @@ console.log(`Generated synthetic transcript: ${syntheticWords.length} words, ${t
 const candidates = generateCandidateSegments([], syntheticWords, totalDuration);
 console.log(`Generated ${candidates.length} candidates:`);
 
-let allUnder35 = true;
+let allUnder90 = true;
 candidates.forEach((c, idx) => {
   console.log(`  Candidate #${idx}: ${c.startTime}s -> ${c.endTime}s (Duration: ${c.duration}s)`);
-  if (c.duration > 35) {
-    allUnder35 = false;
-    console.error(`  FAIL: Candidate #${idx} duration ${c.duration} > 35s!`);
+  if (c.duration > 90) {
+    allUnder90 = false;
+    console.error(`  FAIL: Candidate #${idx} duration ${c.duration} > 90s!`);
   }
 });
 
@@ -43,15 +43,15 @@ const ranked = dedupeAndRankCandidates(candidates, scoreMap, totalDuration, 70);
 console.log(`\nRanked clips (${ranked.rankedClips.length}):`);
 ranked.rankedClips.forEach((c) => {
   console.log(`  Rank #${c.rank}: ${c.startTime}s -> ${c.endTime}s (Duration: ${c.duration}s)`);
-  if (c.duration > 35) {
-    allUnder35 = false;
-    console.error(`  FAIL: Ranked clip #${c.rank} duration ${c.duration} > 35s!`);
+  if (c.duration > 90) {
+    allUnder90 = false;
+    console.error(`  FAIL: Ranked clip #${c.rank} duration ${c.duration} > 90s!`);
   }
 });
 
-if (allUnder35) {
-  console.log('\n[PASS] All candidates and ranked clips are strictly <= 35 seconds long!');
+if (allUnder90) {
+  console.log('\n[PASS] All candidates and ranked clips are strictly <= 90 seconds long!');
 } else {
-  console.error('\n[FAIL] Found clips exceeding 35 seconds!');
+  console.error('\n[FAIL] Found clips exceeding 90 seconds!');
   process.exit(1);
 }

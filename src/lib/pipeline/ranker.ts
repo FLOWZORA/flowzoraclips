@@ -86,8 +86,9 @@ export function dedupeAndRankCandidates(
   const capped = accepted.slice(0, MAX_CLIPS_PER_VIDEO);
 
   // Convert to CandidateClip format with 1-based ranks
-  // Enforces hard ceiling: no clip generated can be more than 35 seconds long
-  const MAX_ALLOWED_CLIP_DUR = 35;
+  // Safety ceiling only: candidates already resolve at sentence boundaries
+  // up to 90s (context-complete); this just guards runaway windows.
+  const MAX_ALLOWED_CLIP_DUR = 90;
   const rankedClips: CandidateClip[] = capped.map((item, idx) => {
     const start = item.window.startTime;
     let end = item.window.endTime;

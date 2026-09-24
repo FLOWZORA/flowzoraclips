@@ -22,6 +22,7 @@ import {
   calculateHeuristicScore,
 } from '@/lib/pipeline/gemini-scorer';
 import { dedupeAndRankCandidates } from '@/lib/pipeline/ranker';
+import { applySignalBonuses } from '@/lib/pipeline/signal-analyzer';
 import { refundCreditOnFailure } from '@/lib/billing/credits';
 import { recordApiSpend } from '@/lib/billing/kill-switch';
 import { inMemoryClips } from '@/lib/pipeline/video-exporter';
@@ -266,7 +267,16 @@ async function runProcessVideo(
       };
       const scoreMap = new Map<string, CandidateScore>(scoreEntries);
       const scoring = buildScoringReport(scoreMap.values());
-      const rankedResult = dedupeAndRankCandidates(candidates, scoreMap, transcription.duration, 72);
+      // Zero-cost signal fusion (transcript-only here — full audio isn't
+      // paged into this step; loudness peaks apply on the inline path).
+      // applySignalBonuses never throws; engines/counts are unaffected.
+      const { map: finalScoreMap } = await applySignalBonuses(
+        scoreMap,
+        candidates,
+        transcription.words,
+        transcription.duration
+      );
+      const rankedResult = dedupeAndRankCandidates(candidates, finalScoreMap, transcription.duration, 72);
 
       for (const c of rankedResult.rankedClips) {
         inMemoryClips.set(c.id, c);

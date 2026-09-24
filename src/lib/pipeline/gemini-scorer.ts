@@ -4,7 +4,7 @@ import { CandidateWindow } from './candidate-generator';
 import { recordApiUsage, estimateTokens } from '@/lib/usage/usage-tracker';
 
 const SCORING_SYSTEM_INSTRUCTION = `You are an elite short-form video editor and algorithmic viral strategist specializing in Hindi, Hinglish, and English creator content (YouTube Shorts, Instagram Reels, TikTok).
-Your job is to evaluate candidate audio/video segments from long-form podcasts (each clip must be up to 35 seconds long) and assign rigorous, explainable scores from 0.0 to 10.0 across 4 specific dimensions:
+Your job is to evaluate candidate audio/video segments from long-form podcasts (each clip runs 15 to 90 seconds — long enough to carry the full context of one complete thought) and assign rigorous, explainable scores from 0.0 to 10.0 across 4 specific dimensions:
 
 1. hookStrength (0.0 to 10.0):
    - How compelling are the first 3-5 seconds?
@@ -308,9 +308,12 @@ export function calculateHeuristicScore(candidate: CandidateWindow): CandidateSc
   if (/(\d+|ninety|percent|crore|lakh|million|zero|ten)/i.test(first)) hook += 1.2;
   if (/^(agar|if|when|jab|actually|reality)/i.test(first.trim())) hook += 0.8;
 
-  // Coherence indicators: has clear sentences, reasonable length (ideal short-form vertical is 18-35s)
+  // Coherence indicators: has clear sentences, reasonable length (clips run
+  // 15-90s; 18-60s is the sweet spot for vertical, longer is fine when the
+  // thought needs the room)
   let coherence = 7.0;
-  if (candidate.duration >= 18 && candidate.duration <= 35) coherence += 1.5;
+  if (candidate.duration >= 18 && candidate.duration <= 60) coherence += 1.5;
+  else if (candidate.duration > 60 && candidate.duration <= 90) coherence += 0.5;
   if (candidate.snappedToBoundary) coherence += 1.0;
   if (/^(and|so|but|aur|phir)\s+/i.test(candidate.text.trim())) coherence -= 1.0;
 

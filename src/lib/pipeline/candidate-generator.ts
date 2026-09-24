@@ -14,13 +14,22 @@ export interface CandidateWindow {
 
 const SENTENCE_END_REGEX = /[.?!।,;:|।॥…\u2026\u0964\u0965\-]\s*$/;
 const MIN_CLIP_DURATION_SEC = 15;
-const MAX_CLIP_DURATION_SEC = 35;
+/** Soft target: prefer endings at or under this, but extend past it when the
+ * thought needs more context to make sense (see CONTEXT_EXTENSION below). */
+const TARGET_MAX_CLIP_DURATION_SEC = 35;
+/**
+ * Absolute ceiling: a clip may run up to this long when — and only when —
+ * ending earlier would cut a sentence mid-thought. Every extension must land
+ * on a real punctuation boundary, so clips always resolve cleanly.
+ */
+const ABSOLUTE_MAX_CLIP_DURATION_SEC = 90;
 const TARGET_STRIDE_SEC = 12;
 
 /**
  * Generates sliding-window candidate segments aligned to natural semantic sentence and pause boundaries.
  * Explicitly avoids naive fixed-interval slicing (generic other tools' limitation).
- * Enforces strict hard ceiling: all generated clips are <= 35 seconds long.
+ * No hard 35s cut: windows prefer ≤35s endings but extend to the next sentence
+ * boundary (up to 90s) so every clip carries the context it needs to make sense.
  */
 export function generateCandidateSegments(
   segments: TranscriptSegment[],
@@ -73,21 +82,39 @@ export function generateCandidateSegments(
 
     const startSec = words[startWordIdx].start;
 
-    // Search forward for valid ending boundaries within [MIN_CLIP_DURATION_SEC, MAX_CLIP_DURATION_SEC]
+    // Search forward for valid ending boundaries within [MIN, TARGET_MAX].
+    // Context rule: if the best in-range ending is NOT a punctuation boundary
+    // (i.e. the thought continues), keep extending to the next punctuation
+    // boundary up to ABSOLUTE_MAX so the clip resolves instead of cutting
+    // mid-thought. Punctuation endings inside the preferred range still win.
     let bestEndBoundaryIdx = -1;
 
     for (let j = currentStartBoundaryIdx; j < boundaries.length; j++) {
       const endSec = boundaries[j].timestamp;
       const duration = endSec - startSec;
 
-      if (duration >= MIN_CLIP_DURATION_SEC && duration <= MAX_CLIP_DURATION_SEC) {
+      if (duration >= MIN_CLIP_DURATION_SEC && duration <= TARGET_MAX_CLIP_DURATION_SEC) {
         bestEndBoundaryIdx = j;
         // Prefer natural punctuation ending over mere pause if possible (between 20s and 35s)
         if (boundaries[j].isPunctuation && duration >= 22) {
           break;
         }
-      } else if (duration > MAX_CLIP_DURATION_SEC) {
+      } else if (duration > TARGET_MAX_CLIP_DURATION_SEC) {
         break;
+      }
+    }
+
+    // Extend past the soft cap only to finish the thought: walk forward to
+    // the next punctuation boundary (never past the absolute ceiling).
+    if (bestEndBoundaryIdx !== -1 && !boundaries[bestEndBoundaryIdx].isPunctuation) {
+      for (let j = bestEndBoundaryIdx + 1; j < boundaries.length; j++) {
+        const endSec = boundaries[j].timestamp;
+        const duration = endSec - startSec;
+        if (duration > ABSOLUTE_MAX_CLIP_DURATION_SEC) break;
+        if (boundaries[j].isPunctuation) {
+          bestEndBoundaryIdx = j;
+          break;
+        }
       }
     }
 
@@ -114,10 +141,10 @@ export function generateCandidateSegments(
         snappedToBoundary: true,
       });
     } else {
-      // If no boundary matched within [MIN, MAX], find the last word that fits within MAX_CLIP_DURATION_SEC
+      // If no boundary matched within [MIN, TARGET_MAX], find the last word that fits within ABSOLUTE_MAX
       let fallbackWordIdx = -1;
       for (let k = startWordIdx; k < words.length; k++) {
-        if (words[k].end - startSec <= MAX_CLIP_DURATION_SEC) {
+        if (words[k].end - startSec <= ABSOLUTE_MAX_CLIP_DURATION_SEC) {
           fallbackWordIdx = k;
         } else {
           break;
@@ -162,9 +189,9 @@ export function generateCandidateSegments(
     }
   }
 
-  // Fallback 1: If strict boundary snapping found no clips, generate standard slice <= 35s
+  // Fallback 1: If strict boundary snapping found no clips, generate standard slice <= 90s
   if (candidates.length === 0 && totalDuration >= MIN_CLIP_DURATION_SEC) {
-    const chunkDur = Math.min(MAX_CLIP_DURATION_SEC, totalDuration);
+    const chunkDur = Math.min(ABSOLUTE_MAX_CLIP_DURATION_SEC, totalDuration);
     const sliceWords = words.filter((w) => w.end <= chunkDur);
     const finalWords = sliceWords.length > 0 ? sliceWords : words.slice(0, 25);
     const finalDur = finalWords.length > 0 ? finalWords[finalWords.length - 1].end : chunkDur;
@@ -183,7 +210,7 @@ export function generateCandidateSegments(
 
   // Fallback 2: Audio with words shorter than MIN_CLIP_DURATION_SEC
   if (candidates.length === 0 && words.length > 0) {
-    const chunkDur = Math.min(MAX_CLIP_DURATION_SEC, totalDuration || words[words.length - 1].end);
+    const chunkDur = Math.min(ABSOLUTE_MAX_CLIP_DURATION_SEC, totalDuration || words[words.length - 1].end);
     const sliceWords = words.filter((w) => w.end <= chunkDur);
     const finalDur = sliceWords.length > 0 ? sliceWords[sliceWords.length - 1].end : chunkDur;
     candidates.push({
@@ -199,15 +226,16 @@ export function generateCandidateSegments(
     });
   }
 
-  // Absolute safety invariant: Hard cap every candidate to maximum 35 seconds
+  // Absolute safety invariant: hard cap every candidate at 90 seconds.
+  // Anything longer is a runaway window, not a short.
   return candidates.map((c) => {
-    if (c.duration > MAX_CLIP_DURATION_SEC) {
-      const clampedEnd = Number((c.startTime + MAX_CLIP_DURATION_SEC).toFixed(2));
+    if (c.duration > ABSOLUTE_MAX_CLIP_DURATION_SEC) {
+      const clampedEnd = Number((c.startTime + ABSOLUTE_MAX_CLIP_DURATION_SEC).toFixed(2));
       const clampedWords = c.words.filter((w) => w.end <= clampedEnd);
       return {
         ...c,
         endTime: clampedEnd,
-        duration: MAX_CLIP_DURATION_SEC,
+        duration: ABSOLUTE_MAX_CLIP_DURATION_SEC,
         words: clampedWords.length > 0 ? clampedWords : c.words,
         text: (clampedWords.length > 0 ? clampedWords : c.words).map((w) => w.word).join(' '),
       };

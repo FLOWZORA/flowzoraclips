@@ -50,6 +50,7 @@ export interface CandidateScore {
   reasoning: string;           // Transparent 1-line explanation of why this clip works
   scoringEngine: ScoringEngine;          // 'heuristic' means the AI ranking did NOT run
   fallbackReason?: ScoringFallbackReason; // present only when scoringEngine is 'heuristic'
+  signalBonus?: number;        // zero-cost audio-signal boost (0-8) fused into compositeScore
 }
 
 /** Pipeline-level summary of whether AI ranking actually ran. */

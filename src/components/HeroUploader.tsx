@@ -349,7 +349,8 @@ export default function HeroUploader() {
         const d = json.data;
         const sanitizeClips = (clips: CandidateClip[]) =>
           (clips || []).map((c) => {
-            const dur = Math.min(35, c.duration || (c.endTime - c.startTime));
+            // Safety ceiling matching the pipeline (context-complete clips up to 90s)
+            const dur = Math.min(90, c.duration || (c.endTime - c.startTime));
             const safeEnd = Number((c.startTime + dur).toFixed(1));
             return {
               ...c,
@@ -399,7 +400,7 @@ export default function HeroUploader() {
           let newEnd = type === 'end' ? c.endTime + deltaSec : c.endTime;
           // Guard minimum clip length of 3s
           if (newEnd - newStart < 3) return c;
-          // Strict hard ceiling: no clip can be more than 35 seconds long
+          // Strict hard ceiling: no clip can be more than 90 seconds long
           if (newEnd - newStart > 35) {
             if (type === 'end') {
               newEnd = newStart + 35;
