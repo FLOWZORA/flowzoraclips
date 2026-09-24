@@ -5,7 +5,7 @@ export default function FaqSection() {
     {
       question: 'How does FLOWZORA Clips work?',
       answer:
-        'You simply drop a long-form video or audio file (MP4, MOV, MP3, WAV). Our pipeline transcribes audio with word-level timestamps, detects natural semantic sentence boundaries (never naive fixed time slices), scores candidate moments across 4 dimensions (Hook, Coherence, Emotion, Trend) using Google Gemini, and reframes the best moments into 9:16 vertical clips with animated English captions.',
+        'You simply drop a long-form video or audio file (MP4, MOV, MP3, WAV). Our pipeline transcribes audio with word-level timestamps using Cloudflare Whisper Turbo (with automatic Groq backup), detects natural semantic sentence boundaries (never naive fixed time slices), scores candidate moments across 4 dimensions (Hook, Coherence, Emotion, Trend) using Google Gemini backed by audio-signal evidence, and reframes the best 10 moments into vertical clips with animated captions.',
     },
     {
       question: 'What kind of videos are supported?',
@@ -20,7 +20,7 @@ export default function FaqSection() {
     {
       question: 'Is FLOWZORA Clips free?',
       answer:
-        'Yes! FLOWZORA Clips is currently 100% free with unlimited clips during our public beta. No credit card, payment details, or forced recurring subscriptions are required.',
+        'Yes! FLOWZORA Clips is currently 100% free during our public beta — 10 ranked clips per video, no credit card, payment details, or forced recurring subscriptions required.',
     },
     {
       question: 'Is FLOWZORA Clips really cheaper than Opus Clip?',
@@ -45,7 +45,22 @@ export default function FaqSection() {
     {
       question: 'Why is the scoring model more transparent than other clip tools?',
       answer:
-        'Competitors provide a single opaque "virality score" (e.g. "87%"). FLOWZORA Clips uses Google Gemini to evaluate each candidate segment across 4 transparent dimensions: Hook Strength (0–10), Standalone Coherence (0–10), Emotional Payoff (0–10), and Topic-Trend Alignment (0–10), complete with a one-line reasoning explanation explaining exactly why each clip works.',
+        'Competitors provide a single opaque "virality score" (e.g. "87%"). FLOWZORA Clips uses Google Gemini to evaluate each candidate segment across 4 transparent dimensions: Hook Strength (0–10), Standalone Coherence (0–10), Emotional Payoff (0–10), and Topic-Trend Alignment (0–10), complete with a one-line reasoning explanation explaining exactly why each clip works. Audio signals (energy peaks, excitement bursts) add up to +8 on top, and every boost is labeled in the reasoning.',
+    },
+    {
+      question: 'How many clips do I get per video?',
+      answer:
+        'Exactly 10 — regardless of whether your video is 10 minutes or 3 hours. Candidates are deduped for overlap, ranked best-first, and the top 10 survive. Short videos with fewer strong moments may return fewer rather than filler.',
+    },
+    {
+      question: 'How long is each clip?',
+      answer:
+        'Between 15 and 90 seconds. Cuts prefer tight 35-second endings but extend to the next sentence boundary (up to 90 seconds) whenever the thought needs more context — so clips always end on a resolved point, never mid-sentence.',
+    },
+    {
+      question: 'What happens when a free API quota runs out?',
+      answer:
+        'The pipeline fails over automatically: Cloudflare Whisper hands off to Groq Whisper for transcription, and Gemini scoring hands off to Groq LLM — Groq is never used first, only as backup. The estimated daily quota panel above the How It Works section shows how much headroom each API has left, resetting at midnight Pacific.',
     },
   ];
 

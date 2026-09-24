@@ -12,7 +12,7 @@ export default function ScoringExplainer() {
             Transparent Scoring, Not an Opaque “Virality” Number
           </h2>
           <p className="mt-3 text-sm sm:text-base text-[#A1A1A1] leading-relaxed">
-            Most clipping tools output an arbitrary score like “89% Viral” without explaining why a segment was cut. FLOWZORA Clips evaluates every candidate segment across four distinct dimensions via structured Gemini API reasoning.
+            Most clipping tools output an arbitrary score like “89% Viral” without explaining why a segment was cut. FLOWZORA Clips evaluates every candidate segment across four distinct dimensions via structured Gemini API reasoning — with a Groq LLM backup if Gemini hits quota — then fuses zero-cost audio signals (energy peaks, speech excitement) into the final rank.
           </p>
         </div>
 
@@ -70,13 +70,26 @@ export default function ScoringExplainer() {
         {/* Quality-driven Count vs Fixed-Interval Chunking */}
         <div className="mt-6 rounded-xl border border-[#262626] bg-[#0A0A0A] p-6 hover:border-[#383838] transition-colors">
           <div className="font-mono text-xs uppercase tracking-wider text-[#A1A1A1] mb-1">
+            Audio-Signal Fusion
+          </div>
+          <h3 className="text-base font-semibold text-white">
+            Words Are Judged by AI, Moments Are Confirmed by Sound
+          </h3>
+          <p className="mt-2 text-xs sm:text-sm text-[#A1A1A1] leading-relaxed">
+            Text scores alone miss what the room felt. Every candidate also earns up to +8 from the audio itself — laughter and applause peaks, fast excited speech, clean entries after pauses, exits that resolve. No extra API bills: signals are computed locally from your audio and word timings, and they can only ever raise a score, never lower it.
+          </p>
+        </div>
+
+        {/* Fixed Yield */}
+        <div className="mt-6 rounded-xl border border-[#262626] bg-[#0A0A0A] p-6 hover:border-[#383838] transition-colors">
+          <div className="font-mono text-xs uppercase tracking-wider text-[#A1A1A1] mb-1">
             Yield Architecture
           </div>
           <h3 className="text-base font-semibold text-white">
-            Quality-Driven Yield Over Artificial Quotas
+            Exactly 10 Clips Per Video, Context-Complete
           </h3>
           <p className="mt-2 text-xs sm:text-sm text-[#A1A1A1] leading-relaxed">
-            Regional competitors slice long audio into naive 60-second fixed intervals every 3 minutes. In reality, a 45-minute podcast might genuinely contain only 6–8 viral moments. FLOWZORA Clips uses sliding-window sentence alignment with overlap deduplication, returning only the clips that exceed the quality bar.
+            Regional competitors slice long audio into naive 60-second fixed intervals every 3 minutes. FLOWZORA Clips uses sliding-window sentence alignment with overlap deduplication — and returns the top 10 clips per video regardless of duration. Windows prefer tight 35-second cuts but extend to the next sentence boundary (up to 90 seconds) whenever the thought needs the room, so every clip makes sense on its own.
           </p>
         </div>
       </div>
