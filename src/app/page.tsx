@@ -23,7 +23,7 @@ export default function HomePage() {
             {/* Header */}
             <div className="text-center max-w-3xl mx-auto mb-6 sm:mb-10">
               <h1 className="text-2xl xs:text-3xl sm:text-5xl lg:text-6xl font-semibold tracking-[-0.04em] text-white leading-[1.15] sm:leading-[1.1] text-balance">
-                Turn Long Podcasts into Ranked, Ready-to-Post Short Clips
+                Turn Long Podcasts into Ranked, Ready-to-Post Short Clips with Subtitles
               </h1>
               <p className="mt-3 sm:mt-4 text-xs sm:text-base text-[#A1A1A1] max-w-2xl mx-auto font-normal leading-relaxed text-balance">
                 No manual scrubbing. Semantic boundary alignment, transparent 4-dimension scoring, and scene-aware 9:16 vertical reframing.
