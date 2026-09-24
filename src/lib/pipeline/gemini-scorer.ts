@@ -123,6 +123,8 @@ Evaluate this candidate and respond with structured JSON.`;
 
 /**
  * Backup scorer via Groq's free chat-completions endpoint (OpenAI-compatible).
+ * Tries models in order — if Groq retires an id (404 model_not_found, as
+ * happened to llama-3.3-70b-versatile in Aug 2026) the next one is tried.
  * Returns null (never throws) so the caller falls through to heuristics.
  */
 async function scoreCandidateWithGroq(
@@ -131,9 +133,49 @@ async function scoreCandidateWithGroq(
 ): Promise<CandidateScore | null> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey || apiKey.includes('YourGroqApiKey')) return null;
-  const model = process.env.GROQ_SCORING_MODEL || 'llama-3.3-70b-versatile';
+  // Groq's recommended replacement for the retired llama-3.3-70b-versatile.
+  const configured = (process.env.GROQ_SCORING_MODEL || '').trim();
+  const models = configured
+    ? [configured, 'openai/gpt-oss-120b', 'openai/gpt-oss-20b']
+    : ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'];
+  let lastError = '';
+  for (const model of models) {
+    try {
+      const score = await scoreCandidateWithGroqModel(candidate, contextLanguage, apiKey, model);
+      if (score) return score;
+      // Null = non-model failure (logged inside); don't burn the next model.
+      return null;
+    } catch (err: any) {
+      // Model id retired/unknown — try the next one.
+      if (isGroqModelNotFound(err)) {
+        lastError = err.message;
+        console.warn(`[Scoring] Groq model "${model}" unavailable, trying next…`);
+        continue;
+      }
+      console.warn('[Scoring] Groq backup error, falling back to heuristic scoring:', err?.message || err);
+      return null;
+    }
+  }
+  console.warn('[Scoring] All Groq backup models unavailable, falling back to heuristic scoring:', lastError);
+  return null;
+}
+
+/** Groq returns 404 model_not_found for retired/unknown ids. */
+function isGroqModelNotFound(err: any): boolean {
+  const status = err?.status;
+  const text = `${err?.message || ''}`;
+  return status === 404 || /model_not_found|model.*decommissioned|model.*not exist|does not exist/i.test(text);
+}
+
+async function scoreCandidateWithGroqModel(
+  candidate: CandidateWindow,
+  contextLanguage: string,
+  apiKey: string,
+  model: string
+): Promise<CandidateScore | null> {
+  let res: Response;
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -162,7 +204,13 @@ Evaluate this candidate and respond with ONLY a JSON object with keys: hookStren
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
-      console.warn(`[Scoring] Groq backup failed (${res.status}): ${errText.slice(0, 200)}`);
+      const err: any = new Error(
+        `Groq backup failed (${res.status}): ${errText.slice(0, 200)}`
+      );
+      err.status = res.status;
+      // Retired/unknown model id — let the caller try the next model.
+      if (isGroqModelNotFound(err)) throw err;
+      console.warn(`[Scoring] ${err.message}`);
       return null;
     }
     const data: any = await res.json();
@@ -188,6 +236,9 @@ Evaluate this candidate and respond with ONLY a JSON object with keys: hookStren
       scoringEngine: 'groq',
     };
   } catch (err: any) {
+    // Model-retirement errors propagate to the chain above; network-level
+    // failures end here (no point retrying another model offline).
+    if (isGroqModelNotFound(err)) throw err;
     console.warn('[Scoring] Groq backup error, falling back to heuristic scoring:', err?.message || err);
     return null;
   }

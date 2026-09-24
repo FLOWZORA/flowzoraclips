@@ -60,7 +60,7 @@ export default function FaqSection() {
     {
       question: 'What happens when a free API quota runs out?',
       answer:
-        'The pipeline fails over automatically: Cloudflare Whisper hands off to Groq Whisper for transcription, and Gemini scoring hands off to Groq LLM — Groq is never used first, only as backup. The estimated daily quota panel above the How It Works section shows how much headroom each API has left, resetting at midnight Pacific.',
+        'The pipeline fails over automatically: Cloudflare Whisper hands off to Groq Whisper for transcription, and Gemini scoring hands off to Groq LLM — Groq is never used first, only as backup. The scoring backup even switches models on its own if a provider retires one, so ranking keeps working without code changes. The estimated daily quota panel above the How It Works section shows how much headroom each API has left, resetting at midnight Pacific.',
     },
   ];
 
