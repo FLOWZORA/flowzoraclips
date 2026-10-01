@@ -27,7 +27,8 @@ Or connect via Railway dashboard → New Project → Deploy from GitHub repo →
 
 | Variable | Required | Description |
 |---|---|---|
-| `YOUTUBE_COOKIE` | Recommended | Your YouTube session cookies (Netscape format exported from browser). Bypasses age-gates and reduces bot detection. |
+| `YOUTUBE_COOKIE` | Recommended | Your YouTube session cookies (Netscape format exported from browser). Bypasses age-gates and reduces bot detection. Set HERE on the worker — Vercel's copy is never forwarded. |
+| `YOUTUBE_PROXY_URL` | Required on cloud hosts | Residential proxy with sticky sessions (e.g. `http://user:pass@host:port`). This worker's egress IP is what YouTube judges — the Next.js host's proxy var does nothing for extraction. Datacenter/shared proxies are already burned. |
 | `WORKER_SECRET_TOKEN` | Recommended | A random secret string. Set the same value in Vercel as `WORKER_SECRET_TOKEN`. |
 | `EXTRACT_TIMEOUT_MS` | Optional | Per-extraction yt-dlp timeout. Defaults to `40000`. Keep it below the caller's 45s abort (see Timing budget). |
 | `PORT` | Auto-set | Railway sets this automatically. |

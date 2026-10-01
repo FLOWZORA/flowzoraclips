@@ -401,11 +401,11 @@ export default function HeroUploader() {
           // Guard minimum clip length of 3s
           if (newEnd - newStart < 3) return c;
           // Strict hard ceiling: no clip can be more than 90 seconds long
-          if (newEnd - newStart > 35) {
+          if (newEnd - newStart > 90) {
             if (type === 'end') {
-              newEnd = newStart + 35;
+              newEnd = newStart + 90;
             } else {
-              newStart = newEnd - 35;
+              newStart = newEnd - 90;
             }
           }
           return {
@@ -682,9 +682,9 @@ export default function HeroUploader() {
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-[#9AA2B6] px-1">
           <div className="flex items-center gap-1.5 text-[#10B981]">
             <Sparkles className="h-4 w-4" />
-            <span>100% Free Public Beta • No Sign-In Required • Unlimited Clips</span>
+            <span>100% Free Public Beta • No Sign-In Required • 10 Clips Per Video</span>
           </div>
-          <div>English AI Subtitles • Scene-Aware 9:16 Reframe</div>
+          <div>AI Subtitles • Scene-Aware 9:16 Reframe</div>
         </div>
 
         {/* Error Banner */}

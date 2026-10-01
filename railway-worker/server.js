@@ -140,11 +140,33 @@ async function extractAudioBuffer(videoUrl, cookieString) {
     args.push('--cookies', cookiePath);
   }
 
+  // Route yt-dlp through the proxy when configured. NOTE: this is the ONLY
+  // place the proxy matters — the Next.js host's YOUTUBE_PROXY_URL never
+  // touches this worker's egress. Set YOUTUBE_PROXY_URL on THIS service
+  // (Render/Railway dashboard), not just on Vercel. Must be a residential
+  // proxy with sticky sessions; datacenter/shared exits are already burned.
+  const proxyUrl = (
+    process.env.YOUTUBE_PROXY_URL ||
+    process.env.HTTPS_PROXY ||
+    process.env.HTTP_PROXY ||
+    ''
+  ).trim();
+  if (proxyUrl) {
+    args.push('--proxy', proxyUrl);
+  }
+
   // Add video URL last
   args.push(videoUrl);
 
   console.log(`[Worker] Extracting audio from: ${videoUrl}`);
-  console.log(`[Worker] yt-dlp args: ${args.filter(a => !a.includes('cookie')).join(' ')}`);
+  // Never log credentials: strip cookie paths AND proxy URLs (user:pass@host).
+  console.log(
+    `[Worker] yt-dlp args: ${args
+      .filter((a) => !a.includes('cookie'))
+      .map((a) => (a.includes('@') && a.includes(':') ? '[proxy-redacted]' : a))
+      .join(' ')}`
+  );
+  console.log(`[Worker] Proxy: ${proxyUrl ? 'configured' : 'not set'} | Cookie: ${cookiePath ? 'configured' : 'not set'}`);
 
   return new Promise((resolve, reject) => {
     const proc = spawn('yt-dlp', args, { stdio: ['ignore', 'pipe', 'pipe'] });
