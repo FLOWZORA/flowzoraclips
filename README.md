@@ -128,4 +128,4 @@ Live beta (free period, pricing UI temporarily disabled). Next: speaker diarizat
 
 ## Author
 
-Built by FLOWZORA (AI consulting practice) — flowzoraclips.com is its creator-tools sub-brand. Recruiter contact via the site's `/contact` page.
+Built by Vaibhav Tiwari. Recruiter contact via the site's `/contact` page.
